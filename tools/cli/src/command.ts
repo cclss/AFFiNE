@@ -37,11 +37,17 @@ export abstract class PackageCommand extends Command {
     this.availablePackageNameArgs.map(k => t.isLiteral(k))
   );
 
-  protected packageNameOrAlias = Option.String('--package,-p', {
-    required: true,
-    validator: this.packageNameValidator,
-    description: 'The package name or alias to be run with',
-  });
+  // Declared as possibly-absent so a subclass can re-declare the option as
+  // optional (see `BuildCommand`); it stays required for everyone who inherits
+  // this declaration as-is.
+  protected packageNameOrAlias: string | undefined = Option.String(
+    '--package,-p',
+    {
+      required: true,
+      validator: this.packageNameValidator,
+      description: 'The package name or alias to be run with',
+    }
+  );
 
   get package(): PackageName {
     const name =
