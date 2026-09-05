@@ -390,7 +390,8 @@ RUN set -eux; \
 # bundle, its production dependencies, the static assets — and a database and
 # a cache, so that an image run with no connection details still has both.
 # Which of the two it uses is a startup decision, not a build one: this stage
-# only puts the servers and their data directories in the image.
+# only puts the servers and their data directories in the image, and names the
+# entrypoint that makes the decision.
 #
 # They live in this stage alone. No build stage installs them: nothing above
 # runs a database, and a package in a build stage would be paid for in build
@@ -494,6 +495,27 @@ ENV LD_PRELOAD=libjemalloc.so.2
 
 COPY --from=runtime-assets /app /app
 
+# The entrypoint drops privileges to the `postgres` and `redis` accounts before
+# starting either embedded server, and runuser is how it does that. It comes
+# from util-linux, which Debian marks essential — asserting it here turns a base
+# image that ever stopped shipping it into a failed build instead of a container
+# that fails on its first start.
+#
+# The executable bit likewise: the script's mode travels from the repository
+# through two COPY layers, and an ENTRYPOINT that is not executable is a run
+# time error with no useful message.
+RUN set -eux; \
+  command -v runuser; \
+  test -x ./scripts/self-host-entrypoint.sh
+
 EXPOSE 3010
 
+# The entrypoint decides whether the servers embedded above are used or whether
+# the operator's own are, runs the initial setup, and hands over to the command
+# below. It is the only place that decision is made — see the script's header.
+#
+# CMD stays the server so that `docker run <image>` starts it, and so that
+# `docker run <image> <something else>` reaches the same prepared database and
+# cache instead of bypassing them.
+ENTRYPOINT ["/app/scripts/self-host-entrypoint.sh"]
 CMD ["node", "./dist/main.js"]
