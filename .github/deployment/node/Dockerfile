@@ -339,23 +339,157 @@ COPY --from=build /app/packages/backend/server/dist ./dist
 
 
 # ---------------------------------------------------------------------------
+# pgdg-key — the signing key of the PostgreSQL APT repository.
+#
+# Debian bookworm ships PostgreSQL 15. This image embeds 16 with the pgvector
+# extension, the pair `.docker/selfhost/compose.yml` has always run as a
+# sibling container (`pgvector/pgvector:pg16`), so the packages come from
+# apt.postgresql.org — which has to be trusted before it can be read.
+#
+# The key is fetched in a stage of its own, so that the tools used to fetch and
+# check it — curl, its TLS stack, gnupg — are thrown away with the stage and
+# the runtime image receives a single armored file. apt reads an ASCII-armored
+# key through `signed-by=`, so it needs no gnupg of its own.
+#
+# Trust chain, in order: the key arrives over a pinned-protocol TLS connection
+# from its upstream-published location; its fingerprint is checked against the
+# value below, so a substituted key fails the build rather than the build
+# trusting whatever it was handed; apt then signature-checks every package
+# installed from the repository against that key.
+# ---------------------------------------------------------------------------
+FROM ${NODE_IMAGE} AS pgdg-key
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg \
+  && rm -rf /var/lib/apt/lists/*
+
+# The fingerprint PostgreSQL publishes for the repository signing key
+# (https://www.postgresql.org/download/linux/debian/). It changes when the key
+# is rotated, which is the moment this pin should be reviewed rather than bumped
+# on sight — an unexpected fingerprint is exactly what it is here to catch.
+ARG PGDG_SIGNING_FINGERPRINT=B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+
+RUN set -eux; \
+  curl --proto '=https' --tlsv1.2 -fsSL \
+    https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /pgdg.asc; \
+  fingerprint="$( \
+    gpg --show-keys --with-colons /pgdg.asc \
+      | awk -F: '$1 == "fpr" { print $10; exit }' \
+  )"; \
+  test "$fingerprint" = "${PGDG_SIGNING_FINGERPRINT}"
+
+
+# ---------------------------------------------------------------------------
 # runtime — the shipped image.
 #
 # Nothing that built the application is here: no Rust toolchain, no C
 # compiler, no source tree, no development dependencies. Just Node, the
-# bundle, its production dependencies and the static assets.
+# bundle, its production dependencies, the static assets — and a database and
+# a cache, so that an image run with no connection details still has both.
+# Which of the two it uses is a startup decision, not a build one: this stage
+# only puts the servers and their data directories in the image.
+#
+# They live in this stage alone. No build stage installs them: nothing above
+# runs a database, and a package in a build stage would be paid for in build
+# time without ever reaching the image.
+#
+# Architecture: apt.postgresql.org publishes amd64, arm64 and ppc64el. This
+# stage therefore builds on those three and fails, loudly and at `apt-get`, on
+# anything else — armhf (`linux/arm/v7`) included. The Rust build above is
+# already single-architecture by design, so a build targets one platform at a
+# time; a `--platform` matrix that still lists armhf is a matrix to revisit,
+# not a reason to embed a database this repository would then not test on.
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
 WORKDIR /app
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
+# The major version is pinned and the patch level is not: apt.postgresql.org
+# carries only the newest patch release of each major, so pinning one would
+# break the build the day it is superseded. 16 matches the sibling image the
+# compose stack runs, which is what an existing volume was initialised by.
+ARG PG_MAJOR=16
+
+COPY --from=pgdg-key /pgdg.asc /etc/apt/keyrings/pgdg.asc
+
+# ca-certificates    installed from Debian's own repository first, because the
+#                    PGDG line below is https and apt verifies the certificate
+#                    before it verifies the signature.
+# libjemalloc2       see LD_PRELOAD below.
+# openssl            Prisma detects its query engine by the installed OpenSSL
+#                    version when the server connects.
+# postgresql-N       the embedded database.
+# postgresql-N-pgvector  the vector type the server's embedding tables
+#                    declare, which the sibling image supplied before. The
+#                    server disables embeddings below pgvector 0.8
+#                    (packages/backend/native/src/runtime/migrations.rs), and
+#                    the repository ships a later one.
+# redis-server       the embedded cache. Pulls redis-tools, hence redis-cli.
+#
+# postgresql-common goes in first so `create_main_cluster` can be turned off
+# before the server package arrives. Debian would otherwise run initdb during
+# the build and ship a cluster under /var/lib/postgresql/N/main that this image
+# never starts — the data directory created below is the only one it runs on,
+# and a cluster baked into a layer cannot hold data anyway.
+#
+# The suite codename is read from the base image rather than written out, so a
+# NODE_IMAGE on a different Debian release fails loudly at `apt-get update`
+# instead of quietly installing bookworm packages.
+#
+# DEBIAN_FRONTEND is set because postgresql-common carries a debconf question
+# (whether new clusters enable SSL). A build has no one to answer it, and the
+# answer is irrelevant to an image that creates no cluster at build time.
+RUN set -eux; \
+  export DEBIAN_FRONTEND=noninteractive; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends ca-certificates; \
+  . /etc/os-release; \
+  test -n "${VERSION_CODENAME}"; \
+  echo "deb [signed-by=/etc/apt/keyrings/pgdg.asc]" \
+    "https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+    > /etc/apt/sources.list.d/pgdg.list; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends postgresql-common; \
+  sed -ri 's/^[[:space:]]*#?[[:space:]]*(create_main_cluster)[[:space:]]*=.*/\1 = false/' \
+    /etc/postgresql-common/createcluster.conf; \
+  grep -qx 'create_main_cluster = false' /etc/postgresql-common/createcluster.conf; \
+  apt-get install -y --no-install-recommends \
     libjemalloc2 \
     openssl \
-  && rm -rf /var/lib/apt/lists/*
+    "postgresql-${PG_MAJOR}" \
+    "postgresql-${PG_MAJOR}-pgvector" \
+    redis-server; \
+  rm -rf /var/lib/apt/lists/*; \
+  test ! -d "/var/lib/postgresql/${PG_MAJOR}/main"
+
+# Neither server runs as root: PostgreSQL refuses to start as root, and both
+# Debian packages create a service account of their own. So the directories
+# they own are created here, owned by the account that will write them, rather
+# than left for a startup script to repair.
+#
+# 0700 is PostgreSQL's own requirement — it refuses to start on a data
+# directory that is group- or world-readable. Empty is what `initdb` needs to
+# find; populating it is a startup concern.
+#
+# /var/lib/redis is replaced rather than adjusted: installing redis-server may
+# leave a dump file behind, and image layers are not where cache state belongs.
+RUN set -eux; \
+  install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/data; \
+  rm -rf /var/lib/redis; \
+  install -d -o redis -g redis -m 0750 /var/lib/redis
+
+# Debian puts the server binaries under a versioned prefix and leaves it off
+# PATH — only the client wrappers are linked into /usr/bin. Prepending it makes
+# `postgres`, `initdb` and `pg_ctl` callable by name, and pins every one of
+# them to the major version installed above instead of whatever a wrapper
+# would resolve to at runtime.
+ENV PATH=/usr/lib/postgresql/${PG_MAJOR}/bin:${PATH}
 
 # jemalloc keeps the resident set stable under the server's allocation pattern;
-# glibc's allocator fragments and grows over long uptimes.
+# glibc's allocator fragments and grows over long uptimes. Being a process
+# environment variable, it is inherited by the embedded servers as well.
 ENV LD_PRELOAD=libjemalloc.so.2
 
 COPY --from=runtime-assets /app /app
