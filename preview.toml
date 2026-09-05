@@ -1,0 +1,9 @@
+# Preview exception configuration. The run and ship contract names this file in
+# its Topic Guides table (AGENTS.md); this is that file. It is deliberately
+# empty of keys — no upstream text or schema for it was found in this
+# repository, so nothing is invented here (assumption — needs confirming).
+#
+# Before adding an entry, confirm the schema, then cite the `file:line` the key
+# and its accepted values were read from — the same evidence rule the contract
+# holds itself to. An entry without that citation is a guess, and a guess in a
+# configuration file is worse than an empty one.
