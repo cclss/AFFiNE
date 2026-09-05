@@ -8,6 +8,7 @@ import { CliAppModule } from './data/app';
 import { CreateCommand } from './data/commands/create';
 import { ImportConfigCommand } from './data/commands/import';
 import { RevertCommand, RunCommand } from './data/commands/run';
+import { StandardSeedCommand } from './data/commands/standard-seed';
 
 function getProgramName() {
   return process.env.npm_lifecycle_event ?? basename(process.argv[1] ?? 'cli');
@@ -63,6 +64,17 @@ function buildProgram(logger: Logger) {
     .action(async () => {
       await withCliApp(logger, async app => {
         await app.get(RunCommand).admitLegacyContextBlobs();
+      });
+    });
+
+  program
+    .command('standard-seed')
+    .description(
+      'Create the documented standard administrator, unless this database already has users'
+    )
+    .action(async () => {
+      await withCliApp(logger, async app => {
+        await app.get(StandardSeedCommand).execute();
       });
     });
 
