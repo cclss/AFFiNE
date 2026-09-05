@@ -56,6 +56,53 @@ Star us, and you will receive all release notifications from GitHub without any 
 
 [AFFiNE](https://affine.pro) is an open-source, all-in-one workspace and an operating system for all the building blocks that assemble your knowledge base and much more -- wiki, knowledge management, presentation and digital assets. It's a better alternative to Notion and Miro.
 
+## Quick start
+
+Clone the repository, then run these two commands in its root:
+
+```sh
+# install dependencies (also initializes the workspace and the git hooks)
+yarn install
+
+# start the dev server, then open http://localhost:8080
+yarn dev
+```
+
+You need Node.js 22 (pinned in [`.nvmrc`](.nvmrc)) and Yarn 4 (`corepack enable`). The Rust toolchain (pinned in [`rust-toolchain.toml`](rust-toolchain.toml)) is needed on top of those for the native modules the desktop and server targets link against. [BUILDING.md] walks through installing all three.
+
+### Choosing a target
+
+This is a monorepo, so `yarn dev` and `yarn build` both take a target. Neither fails when you leave it out:
+
+- `yarn dev` asks which target to run. Where nothing can answer the prompt — no terminal attached, or `CI` set — it starts `@affine/web` and says so.
+- `yarn build` builds `@affine/web` and prints the other targets it could have built instead.
+
+Pass `-p` (`--package`) to pick another one, by alias or by full package name:
+
+```sh
+yarn dev -p admin
+yarn build -p @affine/mobile
+```
+
+| Alias      | Package                     | What it runs                            |
+| ---------- | --------------------------- | --------------------------------------- |
+| `web`      | `@affine/web`               | The browser app — the default target    |
+| `admin`    | `@affine/admin`             | Admin panel for a self-hosted instance  |
+| `electron` | `@affine/electron`          | Desktop app, Electron main process      |
+| `desktop`  | `@affine/electron-renderer` | Desktop app UI, Electron renderer       |
+| `renderer` | `@affine/electron-renderer` | Same target as `desktop`                |
+| `mobile`   | `@affine/mobile`            | Mobile web UI                           |
+| `ios`      | `@affine/ios`               | iOS client                              |
+| `android`  | `@affine/android`           | Android client                          |
+| `server`   | `@affine/server`            | Server behind the cloud features        |
+| `gql`      | `@affine/graphql`           | Generated GraphQL client                |
+
+Every workspace package is reachable by its unscoped name as well, so `-p electron-renderer` is the same as `-p @affine/electron-renderer`.
+
+`@affine/web` on its own covers most editor and UI work — workspaces live in the browser. Cloud features (accounts, sync, collaboration, AI) additionally need the server: see [developing-server.md](docs/developing-server.md).
+
+Native modules, the full test suites, and troubleshooting are covered in [BUILDING.md].
+
 ## Features
 
 **A true canvas for blocks in any form. Docs and whiteboard are now fully merged.**
