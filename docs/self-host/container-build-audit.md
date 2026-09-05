@@ -14,17 +14,21 @@ runtime.
 
 Build and startup definitions:
 
-| File                                                                             | Role                                                         |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| [`.github/deployment/node/Dockerfile`](../../.github/deployment/node/Dockerfile) | The image that is published as `ghcr.io/toeverything/affine` |
-| [`.github/workflows/build-images.yml`](../../.github/workflows/build-images.yml) | The CI pipeline that feeds that Dockerfile                   |
-| [`.dockerignore`](../../.dockerignore)                                           | What reaches the build context                               |
-| [`.gitignore`](../../.gitignore)                                                 | What a fresh clone does not contain                          |
-| [`.render/Dockerfile`](../../.render/Dockerfile)                                 | The Render deployment image                                  |
-| [`.render/start.sh`](../../.render/start.sh)                                     | The Render entrypoint                                        |
-| [`render.yaml`](../../render.yaml)                                               | The Render service, disk and variable wiring                 |
-| [`.docker/selfhost/compose.yml`](../../.docker/selfhost/compose.yml)             | The documented self-host stack                               |
-| [`package.json`](../../package.json)                                             | Workspace and registry declarations                          |
+| File                                                                                   | Role                                                         |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [`.github/deployment/node/Dockerfile`](../../.github/deployment/node/Dockerfile)       | The image that is published as `ghcr.io/toeverything/affine` |
+| [`.github/workflows/build-images.yml`](../../.github/workflows/build-images.yml)       | The CI pipeline that feeds that Dockerfile                   |
+| [`.dockerignore`](../../.dockerignore)                                                 | What reaches the build context                               |
+| [`.gitignore`](../../.gitignore)                                                       | What a fresh clone does not contain                          |
+| [`.render/Dockerfile`](../../.render/Dockerfile)                                       | The Render deployment image                                  |
+| [`.render/start.sh`](../../.render/start.sh)                                           | The Render entrypoint                                        |
+| [`render.yaml`](../../render.yaml)                                                     | The Render service, disk and variable wiring                 |
+| [`.docker/selfhost/compose.yml`](../../.docker/selfhost/compose.yml)                   | The documented self-host stack                               |
+| [`package.json`](../../package.json)                                                   | Workspace and registry declarations                          |
+| [`.github/actions/setup-node/action.yml`](../../.github/actions/setup-node/action.yml) | The shared registry setup every other job uses               |
+| [`yarn.lock`](../../yarn.lock)                                                         | What each declared version resolves to                       |
+| [`packages/frontend/core/package.json`](../../packages/frontend/core/package.json)     | Registry-versioned `@toeverything` declarations              |
+| [`blocksuite/playground/package.json`](../../blocksuite/playground/package.json)       | A further registry-versioned `@toeverything` declaration     |
 
 Server sources read for the variable inventory, under
 [`packages/backend/server/`](../../packages/backend/server/):
@@ -431,9 +435,18 @@ while writing this document.
 ### U3 — Whether the GitHub Packages registry setup is still required
 
 `build-images.yml:221-226` configures npm against `https://npm.pkg.github.com`
-with scope `@toeverything`, but the only `@toeverything` dependency found is
-`@toeverything/infra`, declared as `workspace:*` (`package.json:103`). Whether
-some transitive dependency still resolves from that registry can only be
+with scope `@toeverything`; `.github/actions/setup-node/action.yml:59` does the
+same for every other job. Two kinds of `@toeverything` dependency exist:
+workspace links (`@toeverything/infra`, `package.json:103`) and registry
+versions — `@toeverything/mermaid-wasm` `^0.1.0`, `@toeverything/pdf-viewer`
+`^0.1.1`, `@toeverything/theme` `^1.1.23`
+(`packages/frontend/core/package.json:49-51`), `@toeverything/pdfium`
+(`blocksuite/playground/package.json:21`). `yarn.lock:16178-16180` resolves
+`@toeverything/theme@npm:1.1.23`, but the lockfile does not record which
+registry served it. The `build-images` job installs only
+`@affine/server --production` (`build-images.yml:250`), whose package declares
+no `@toeverything` dependency — so whether that job in particular still needs
+the registry, and whether the frontend jobs would fail without it, can only be
 determined by running an install with the registry unavailable.
 
 ### U4 — Image size and build duration budgets
