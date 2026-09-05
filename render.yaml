@@ -13,19 +13,13 @@ projects:
             # the self-host image uses. Nothing is pulled from a published tag.
             dockerfilePath: ./.github/deployment/node/Dockerfile
             dockerContext: .
-            # That image's CMD is `node ./dist/main.js`. Render needs two things
-            # in front of it, and neither belongs in the image:
-            #
-            #   1. The hostname Render assigns, unless AFFINE_SERVER_HOST is
-            #      already set to a custom domain.
-            #   2. The bootstrap: generates the server private key on first
-            #      boot, then runs the Prisma and data migrations. It is
-            #      idempotent, so it is safe on every boot.
-            dockerCommand: >-
-              sh -c 'export
-              AFFINE_SERVER_HOST="${AFFINE_SERVER_HOST:-${RENDER_EXTERNAL_HOSTNAME:-localhost}}"
-              && node ./scripts/self-host-predeploy.js && exec node
-              ./dist/main.js'
+            # No dockerCommand. The image's ENTRYPOINT
+            # (packages/backend/server/scripts/self-host-entrypoint.sh) already
+            # does the bootstrap — server private key on first boot, then the
+            # Prisma and data migrations, idempotent on every boot — and then
+            # execs the image's CMD, `node ./dist/main.js`. Render overrides
+            # only CMD, never the ENTRYPOINT, so a command here could not
+            # replace that startup; it could only be a second copy of it.
             healthCheckPath: /info
             disk:
               # Uploaded blobs (~/.affine/storage) and the generated private key
@@ -34,6 +28,16 @@ projects:
               mountPath: /root/.affine
               sizeGB: 10
             envVars:
+              # The hostname Render assigns. Render sets
+              # RENDER_EXTERNAL_HOSTNAME in the container itself; this copies
+              # it to the key the server actually reads, which would otherwise
+              # fall back to `localhost`. Serving a custom domain instead means
+              # replacing these four lines with `value: <that domain>`.
+              - key: AFFINE_SERVER_HOST
+                fromService:
+                  name: affine
+                  type: web
+                  envVarKey: RENDER_EXTERNAL_HOSTNAME
               - key: AFFINE_SERVER_PORT
                 value: 10000
               - key: AFFINE_SERVER_HTTPS
