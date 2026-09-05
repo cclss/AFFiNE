@@ -113,14 +113,14 @@ their output into the build context before calling `docker build`:
 
 | Step                                                          | Line                           | Effect                                                      |
 | ------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------- |
-| `yarn affine @affine/web build` → upload artifact `web`       | `:31`, `:47-52`                | Produces `packages/frontend/apps/web/dist`                  |
-| `yarn affine @affine/admin build` → upload artifact `admin`   | `:60`, `:78-83`                | Produces `packages/frontend/admin/dist`                     |
-| `yarn affine @affine/mobile build` → upload artifact `mobile` | `:89`, `:109-114`              | Produces `packages/frontend/apps/mobile/dist`               |
+| `yarn affine @affine/web build` → upload artifact `web`       | `:35`, `:47-52`                | Produces `packages/frontend/apps/web/dist`                  |
+| `yarn affine @affine/admin build` → upload artifact `admin`   | `:67`, `:78-83`                | Produces `packages/frontend/admin/dist`                     |
+| `yarn affine @affine/mobile build` → upload artifact `mobile` | `:98`, `:109-114`              | Produces `packages/frontend/apps/mobile/dist`               |
 | `yarn workspace @affine/server build` → upload `server-dist`  | `:185`, `:186-191`             | Produces `packages/backend/server/dist`                     |
 | Download `server-dist`, `web`, `mobile`, `admin`              | `:203`, `:228`, `:234`, `:240` | Restores the four `COPY` sources                            |
-| `yarn workspaces focus @affine/server --production`           | `:246-251`                     | Installs production dependencies at the repo root           |
-| `yarn workspace @affine/server prisma generate`               | `:252`                         | Generates the Prisma client                                 |
-| `mv ./node_modules ./packages/backend/server`                 | `:255`                         | Relocates `node_modules` so that `Dockerfile:6` picks it up |
+| `yarn workspaces focus @affine/server --production`           | `:250`                         | Installs production dependencies at the repo root           |
+| `yarn workspace @affine/server prisma generate`               | `:253`                         | Generates the Prisma client                                 |
+| `mv ./node_modules ./packages/backend/server`                 | `:256`                         | Relocates `node_modules` so that `Dockerfile:6` picks it up |
 | `docker/build-push-action` with `context: .`                  | `:263-272`                     | Only now is the Dockerfile invoked                          |
 
 The Rust native addon is built earlier still, in `build-server-native`
@@ -154,7 +154,7 @@ key, so `docker compose build` has nothing to build.
 
 `packages/backend/server/scripts/self-host-predeploy.js` generates
 `~/.affine/config/private.key` only if absent (`:34-36`), rolls back a known
-failed migration while swallowing "already rolled back" errors (`:59-81`), then
+failed migration while swallowing "already rolled back" errors (`:59-93`), then
 runs `yarn prisma migrate deploy` (`:43`) and `yarn cli run` (`:52`).
 
 ### F7 — Every existing path expects the database and cache to be outside the image
@@ -178,7 +178,7 @@ once a first user exists (`:41-43`).
 
 ### F9 — An environment variable supplies a config _default_; a config file outranks it
 
-`src/base/config/register.ts:348-364` assembles the default configuration: for
+`src/base/config/register.ts:349-364` assembles the default configuration: for
 every key that declares an `env` binding it reads `process.env`, and applies the
 parsed value **only when the raw value is truthy** (`:362`). Both files in
 `CONFIG_JSON_PATHS` — `{projectRoot}/config.json` and
@@ -203,7 +203,7 @@ inject variables as well as override them.
   (`src/base/redis/config.ts:37`), `REDIS_SERVER_DATABASE` as an integer in
   `0`–`10` (`:26`).
 - `src/env.ts:79-85` throws
-  `Invalid value "..." for environment variable ...` for the enumerated
+  `Invalid value "..." for environment variable ...` for the three allow-listed
   variables of **F14**.
 
 ### F11 — Database and cache
@@ -264,10 +264,18 @@ Three code paths interact here:
 
 ### F14 — Deployment shape
 
-All five are read by `readEnv` (`src/env.ts:69-88`), which rejects unlisted
-values rather than falling back (`:79-85`). Unlike **F9**, it falls back only
-when the variable is `undefined` (`:75-77`) — an empty string is passed to the
-allow-list, and therefore throws.
+These five do not share one reader, and only three of them are validated.
+
+- `AFFINE_ENV`, `DEPLOYMENT_TYPE`, `SERVER_FLAVOR` and `DEPLOYMENT_PLATFORM` go
+  through `readEnv` (`src/env.ts:69-88`), which returns the default only when
+  the variable is `undefined` (`:75-77`). Unlike **F9**, an empty string is a
+  value, not an absence.
+- The first three of those pass an allow-list and throw on anything outside it
+  (`:79-85`), so `AFFINE_ENV=""` stops the boot. `DEPLOYMENT_PLATFORM` passes no
+  list (`:103`) and therefore accepts any string.
+- `NODE_ENV` never reaches `readEnv`. `src/env.ts:91` reads
+  `process.env.NODE_ENV` through `??`, which falls back on `undefined` only and
+  validates nothing.
 
 | Variable              | Source              | Required | Default                                  | Split |
 | --------------------- | ------------------- | -------- | ---------------------------------------- | ----- |
@@ -413,7 +421,7 @@ comparing it to a locally produced one.
 
 ### U2 — Whether the CI install sequence reproduces inside a Docker build
 
-`build-images.yml:246-255` performs `yarn workspaces focus --production`,
+`build-images.yml:246-256` performs `yarn workspaces focus --production`,
 `prisma generate`, and a `node_modules` relocation on the CI host. Whether the
 same sequence succeeds inside a Docker layer is not observable here: this
 worktree has no installed dependencies (`yarn` reports
