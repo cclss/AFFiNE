@@ -2,7 +2,8 @@ import '../prelude';
 
 import { PrismaClient } from '@prisma/client';
 
-import { createFactory, Mockers } from '../__tests__/mocks';
+import { formatStandardSeedReport } from './report';
+import { seedStandardProfile } from './standard';
 
 const client = new PrismaClient();
 
@@ -16,6 +17,7 @@ Checkout [server/src/__tests__/mocks/*.mock.ts] for all available Entities and I
 
 examples:
 
+$ seed standard                              Create the fixed local development accounts
 $ seed User                                  Create an User
 $ seed User 3                                Create 3 Users
 $ seed User feature=administrator            Create an administrator
@@ -25,6 +27,20 @@ $ seed TeamWorkspace id=xxx quantity=10n     Seed with numberic property, use \`
 `);
   process.exit(0);
 }
+
+if (args[0] === 'standard') {
+  const result = await seedStandardProfile(client);
+  await client.$disconnect();
+
+  console.log(formatStandardSeedReport(result));
+
+  process.exit(0);
+}
+
+// Loaded on demand: the mock factories drag in the whole application graph
+// (including the native addon), which the standard profile above has no use for
+// and which a freshly cloned checkout has not built yet.
+const { createFactory, Mockers } = await import('../__tests__/mocks');
 
 const name = args.shift() as keyof typeof Mockers;
 const Mocker = Mockers[name];
