@@ -136,6 +136,7 @@ __metadata:
     tsx: "npm:^4.21.0"
     typanion: "npm:^3.14.0"
     typescript: "npm:@typescript/typescript6@6.0.2"
+    vitest: "npm:^4.1.10"
   bin:
     affine: ./bin/cli.js
     r: ./bin/runner.js
