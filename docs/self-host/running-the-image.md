@@ -131,7 +131,7 @@ image that made it for you would be making it wrong for somebody. What that
 means in practice: mount these paths, or lose what they hold when the container
 is removed.
 
-| Path                        | Holds                                                     | Mount it when                     |
+| Path                        | Holds                                                     | Mount It When                     |
 | --------------------------- | --------------------------------------------------------- | --------------------------------- |
 | `/root/.affine`             | The server's private key, uploaded blobs and avatars      | Always                            |
 | `/var/lib/postgresql/data`  | The in-image database cluster — every document and user   | `DATABASE_URL` is empty           |
