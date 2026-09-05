@@ -76,12 +76,19 @@ already be answering on `3010`.
 `-p` accepts a full package name (`@affine/web`) or an alias (`web`). Aliases
 come from `AliasToPackage` in `tools/utils/src/distribution.ts`, which maps ten
 names by hand and then derives one alias per workspace package from its last
-path segment. Do not trust a copied list of aliases — ask the CLI:
+path segment. Do not trust a copied list of aliases — make the CLI print it:
 
 ```sh
-# Prints the accepted targets for a command.
-yarn affine dev -h
+# Passing an unknown target makes the validator reject it and enumerate every
+# accepted literal — 246 entries, full package names first, then the aliases.
+# Exits 1; the list is the point, not the exit code. The accepted set is built
+# in `tools/cli/src/command.ts:32-37` from the workspace package names plus the
+# `AliasToPackage` keys (`tools/utils/src/distribution.ts:16-30`).
+yarn affine dev -p nosuchpkg
 ```
+
+`-h` does **not** print the target list — it prints only the `--package,-p` and
+`--deps` option descriptions.
 
 `yarn affine dev` without `-p` offers an interactive picker over eight targets:
 `@affine/web`, `@affine/server`, `@affine/electron`, `@affine/electron-renderer`,
@@ -109,8 +116,9 @@ yarn run predeploy
 ```
 
 `predeploy` runs against compiled output — `cli` is
-`node ./dist/main.js` (`packages/backend/server/package.json:21`), so build the
-server before invoking it. `init` is the source-mode equivalent for local work.
+`cross-env SERVER_FLAVOR=script node ./dist/main.js`
+(`packages/backend/server/package.json:21`), so build the server before invoking
+it. `init` is the source-mode equivalent for local work.
 
 The self-host path wraps the same work in one script: it generates
 `~/.affine/config/private.key` on first boot if absent, then runs the Prisma and
@@ -121,7 +129,7 @@ contract are in [conventions/env.md].
 ### Seed
 
 ```sh
-# Prints the available entities and their inputs.
+# Prints usage, examples, and where the entity list lives.
 yarn run seed
 
 # Creates one User with random attributes.
@@ -132,8 +140,9 @@ yarn run seed User 3
 ```
 
 `seed` builds entities from mock factories using the arguments you pass
-(`packages/backend/server/src/seed/index.ts:9-42`). It creates **no fixed
-accounts** — see [Known Gaps].
+(`packages/backend/server/src/seed/index.ts:9-42`). The entity names live in
+`server/src/__tests__/mocks/*.mock.ts`; passing an unknown one prints the full
+list (`:32-36`). It creates **no fixed accounts** — see [Known Gaps].
 
 ## Ship It As A Container
 
@@ -174,6 +183,7 @@ a defect to close, not a rule to follow.
 | The Dockerfile does not build the app | `.render/Dockerfile:4-8` | It starts `FROM ghcr.io/toeverything/affine:stable` and copies in a start script. Nothing is compiled inside it. There is no from-source image build path in the repository yet |
 | Deployment is not a single container | `render.yaml:8-52` | Web, PostgreSQL, and the key-value store are three separate services. Any instruction that assumes one self-contained container is wrong against this repository |
 | The topic guides this page delegates to do not exist | Repository tree — there is no `conventions/` directory at the root, and `git ls-files conventions preview.toml` returns nothing | Every link in [Topic Guides] resolves to a missing file. The six rows state the contract's document set, not the repository's current contents. Until each guide lands, the only detail available is the source paths cited on this page. No upstream text for the guides was found either — see [Assumptions] |
+| Server scripts need a native module `yarn install` does not build | `packages/backend/native/index.js:11`, `packages/backend/server/package.json:19` | After a clean `yarn install`, `yarn run seed` exits with `Error: Cannot find module './server-native.x64.node'`. `@affine/server-native` is a Rust napi module and its binary is not produced by install, so every First-Time Setup command sits behind a build step this contract cannot yet name — building it was attempted and the local linker failed, so no verified command is printed here **(assumption — needs confirming)** |
 
 These gaps are scheduled to be closed by later work. When one closes, the
 section above it must be rewritten to describe what the command then does —
