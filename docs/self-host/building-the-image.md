@@ -146,6 +146,7 @@ incremental Cargo build. Drop `--no-cache` for those.
 
 ## Related Documents
 
+- [running-the-image.md](./running-the-image.md) — running the image once you have it, with or without your own database and cache
 - [container-build-audit.md](./container-build-audit.md) — what the build and startup definitions did before this build existed
 - [BUILDING.md](../BUILDING.md) — building the web app from source, without Docker
 - [developing-server.md](../developing-server.md) — running the server locally for development

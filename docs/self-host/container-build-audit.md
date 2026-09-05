@@ -17,6 +17,12 @@
 > **U1** — carry an inline note recording what replaced them. For how to build
 > the image today, see [building-the-image.md](./building-the-image.md).
 
+> **Also superseded — the image now carries its own database and cache.**
+> **F7**, **I3**, **I8** and **U7** were written when every path put the database
+> and the cache outside the image. The image now embeds both and its entrypoint
+> decides between them and yours, so those four carry an inline note as well. For
+> how to run the image today, see [running-the-image.md](./running-the-image.md).
+
 The ship-ready contract for self-hosting is: _clone the repository, build one
 image from source, run it_. This document locates every point where the current
 definitions fall short of that, and every environment variable the app reads at
@@ -210,6 +216,15 @@ runs `yarn prisma migrate deploy` (`:43`) and `yarn cli run` (`:52`).
   Render database and key-value service.
 - `.github/deployment/node/Dockerfile` installs no database or cache server, and
   its `CMD` (`:35`) starts only the Node process.
+
+> **No longer true.** The runtime stage installs PostgreSQL 16 with pgvector and
+> Redis, and the image's `ENTRYPOINT` —
+> `packages/backend/server/scripts/self-host-entrypoint.sh` — starts them when
+> `DATABASE_URL` and `REDIS_SERVER_HOST` are empty. Both remain external when
+> those variables are set, which is what compose and `render.yaml` still do, so
+> the two paths in this finding are now the *configured* half of a branch rather
+> than the only shape available. See
+> [running-the-image.md](./running-the-image.md).
 
 ### F8 — There is no environment variable that seeds an administrator account
 
@@ -408,6 +423,12 @@ image's only process supervisor is `CMD` (`Dockerfile:35`). Adding in-image
 services requires new packages in the image and a process that starts more than
 one thing.
 
+> **Done, and this is how.** The packages are in the runtime stage; the process
+> that starts more than one thing is the entrypoint script, which starts each
+> server under its own service account and then execs the application. The
+> inference held: it took a Dockerfile change, a new script, and a change to
+> both deployment manifests to stop them bootstrapping separately.
+
 ### I4 — Re-running the bootstrap against a populated database is designed to be safe
 
 From **F6**: the key generator is guarded by an existence check, the
@@ -444,6 +465,15 @@ From **F9** and **F11**: with nothing set, the server resolves to
 container on the standard ports need no variables to be discovered — the empty
 case and the in-image case coincide, and setting the variables is what selects
 an external target. This is a reading of the defaults, not a tested property.
+
+> **Adopted as the rule, and no longer implicit.** The entrypoint branches on
+> exactly this — empty means the server inside the image, set means the one
+> outside — but it does not lean on the application's defaults to get there. It
+> exports `DATABASE_URL` and the `REDIS_SERVER_*` trio for the servers it
+> started, because the bootstrap script's Prisma calls need the value in the
+> environment (**I10**) and because the in-image database is reached with a
+> generated password rather than on trust. The branch is covered by
+> `scripts/self-host-entrypoint.test.sh`, so it is a tested property now.
 
 ### I9 — Emptiness is a per-variable signal, and a partially filled set is not detectable
 
@@ -540,10 +570,19 @@ nothing in the repository states whether the database directory is expected to
 be mounted, whether losing it on restart is acceptable, or what size is assumed.
 This is a product decision, not a fact recoverable from the tree.
 
+> **Settled, as a documented choice rather than a forced one.** The image
+> declares no `VOLUME`: `/root/.affine`, `/var/lib/postgresql/data` and
+> `/var/lib/redis` are the three paths that hold state, and mounting them is the
+> operator's decision. [running-the-image.md](./running-the-image.md) lists
+> which of the three each path matters on and what is lost without it. No size
+> is assumed — that depends on the documents stored, which this repository
+> cannot know.
+
 ---
 
 ## Related documents
 
 - [building-the-image.md](./building-the-image.md) — building the self-host image from source, as it works today
+- [running-the-image.md](./running-the-image.md) — running that image, on either side of the database/cache branch
 - [BUILDING.md](../BUILDING.md) — building the web app from source
 - [developing-server.md](../developing-server.md) — running the server locally
