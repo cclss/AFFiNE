@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   defaultTargetNotice,
+  nonInteractiveTargetNotice,
   PICK_ANOTHER_TARGET,
   unknownTargetNotice,
 } from '../notice';
@@ -89,6 +90,41 @@ describe('unknownTargetNotice', () => {
   });
 });
 
+describe('nonInteractiveTargetNotice', () => {
+  it('names the target it fell back to', () => {
+    expect(nonInteractiveTargetNotice('dev')).toContain(DEFAULT_PACKAGE);
+  });
+
+  it('says why the target was chosen for the user', () => {
+    expect(nonInteractiveTargetNotice('dev')).toMatch(
+      /no interactive terminal/i
+    );
+  });
+
+  it('shows how to pick a different target with the calling command', () => {
+    expect(nonInteractiveTargetNotice('dev')).toContain('yarn dev -p <target>');
+    expect(nonInteractiveTargetNotice('build')).toContain(
+      'yarn build -p <target>'
+    );
+  });
+
+  it('honours an explicit target', () => {
+    expect(
+      nonInteractiveTargetNotice('dev', '@affine/admin' as PackageName)
+    ).toContain('@affine/admin');
+  });
+
+  it('is a single line — CI logs are scanned, not browsed', () => {
+    expect(nonInteractiveTargetNotice('dev').split('\n')).toHaveLength(1);
+  });
+
+  it('never leaks clipanion syntax-error wording', () => {
+    expect(nonInteractiveTargetNotice('dev')).not.toMatch(
+      /Unknown Syntax Error/i
+    );
+  });
+});
+
 describe('notice consistency', () => {
   it('points at the same escape hatch in both notices', () => {
     expect(defaultTargetNotice()).toContain(PICK_ANOTHER_TARGET);
@@ -96,7 +132,11 @@ describe('notice consistency', () => {
   });
 
   it('emits no blank lines, which the CLI logger would drop', () => {
-    for (const notice of [defaultTargetNotice(), unknownTargetNotice('wob')]) {
+    for (const notice of [
+      defaultTargetNotice(),
+      unknownTargetNotice('wob'),
+      nonInteractiveTargetNotice('dev'),
+    ]) {
       expect(notice.split('\n').every(line => line.trim().length > 0)).toBe(
         true
       );

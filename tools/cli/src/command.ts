@@ -7,6 +7,8 @@ import inquirer from 'inquirer';
 import * as t from 'typanion';
 
 import type { CliContext } from './context';
+import { nonInteractiveTargetNotice } from './notice';
+import { DEFAULT_PACKAGE, isNonInteractive } from './target';
 
 export abstract class Command extends BaseCommand<CliContext> {
   // @ts-expect-error hack: Get the command name
@@ -121,21 +123,29 @@ export abstract class PackageSelectorCommand extends Command {
       : undefined;
 
     if (!name) {
-      const answer = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'package',
-          message: 'Which package do you want to dev?',
-          choices: this.availablePackages.map(name => ({
-            name,
-            value: name,
-          })),
-          pageSize: 10,
-          default: '@affine/web',
-        },
-      ]);
+      if (isNonInteractive()) {
+        // Nothing can answer the prompt (no TTY, or CI), so asking would hang
+        // the run forever. Take the same target the prompt defaults to and say
+        // so, instead of blocking.
+        name = DEFAULT_PACKAGE;
+        this.logger.info(nonInteractiveTargetNotice(this.cmd, DEFAULT_PACKAGE));
+      } else {
+        const answer = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'package',
+            message: 'Which package do you want to dev?',
+            choices: this.availablePackages.map(name => ({
+              name,
+              value: name,
+            })),
+            pageSize: 10,
+            default: DEFAULT_PACKAGE,
+          },
+        ]);
 
-      name = answer.package as PackageName;
+        name = answer.package as PackageName;
+      }
     }
 
     // check

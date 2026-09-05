@@ -42,3 +42,18 @@ export function unknownTargetNotice(input: string, aliases?: AliasMap): string {
     `Any workspace package name works too, e.g. \`yarn build -p ${DEFAULT_PACKAGE}\`.`,
   ].join('\n');
 }
+
+/**
+ * Printed when a target prompt cannot be answered — no terminal, or CI — and the
+ * default target is used instead.
+ *
+ * One line by design: this path is read from a CI log or an agent transcript,
+ * where the reader is scanning for "why did it pick that", not browsing a menu.
+ * The full target list stays with the interactive prompt.
+ */
+export function nonInteractiveTargetNotice(
+  command: string,
+  target: PackageName = DEFAULT_PACKAGE
+): string {
+  return `No target given and no interactive terminal — running ${target}. Pick another with \`yarn ${command} -p <target>\`.`;
+}
