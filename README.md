@@ -176,6 +176,8 @@ We would like to express our gratitude to all the individuals who have already c
 
 Begin with Docker to deploy your own feature-rich, unrestricted version of AFFiNE. Our team is diligently updating to the latest version. For more information on how to self-host AFFiNE, please refer to our [documentation](https://docs.affine.pro/self-host-affine).
 
+Prefer to build the image yourself? Clone this repository and run a single `docker build` — no host toolchain required. See [building the self-host image from source](./docs/self-host/building-the-image.md).
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/toeverything/AFFiNE)
 
 [![Run on Sealos](https://sealos.io/Deploy-on-Sealos.svg)](https://sealos.io/products/app-store/affine)

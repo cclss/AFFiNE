@@ -13,6 +13,9 @@
 > and `render.yaml` builds the same Dockerfile — so `.render/Dockerfile` and
 > `.render/start.sh`, cited below and linked from the table, no longer exist.
 > The document is kept as the baseline those changes were reviewed against.
+> The findings the source build invalidates — **F1**–**F5** and **I1** — carry
+> an inline note recording what replaced them. For how to build the image
+> today, see [building-the-image.md](./building-the-image.md).
 
 The ship-ready contract for self-hosting is: _clone the repository, build one
 image from source, run it_. This document locates every point where the current
@@ -105,6 +108,11 @@ invocation. Its `RUN` steps are two `apt-get` installs and one cleanup script:
 
 The app is assembled entirely by `COPY`.
 
+> **No longer true.** The Dockerfile now compiles: it installs the workspace
+> from the lockfile, builds the Rust native addon, bundles web, admin, mobile
+> and the server, then installs the server's production dependency closure.
+> See [building-the-image.md](./building-the-image.md).
+
 ### F2 — Four `COPY` instructions depend on build output that is not in the repository
 
 `Dockerfile:6-9`:
@@ -118,6 +126,12 @@ The app is assembled entirely by `COPY`.
 
 All four are build output. `.gitignore:12` ignores `*dist` and `.gitignore:20`
 ignores `node_modules`, so none of these paths exist in a fresh clone.
+
+> **No longer true.** No stage copies build output from the context. The four
+> paths are produced inside the image by the `build` stage and reach the final
+> image through `COPY --from`, so a fresh clone is a complete build context.
+> `.dockerignore` now excludes the host's `node_modules` and `dist` directories
+> outright, to keep a dirty working tree out of the build.
 
 ### F3 — CI produces those inputs, outside the Dockerfile
 
@@ -140,6 +154,12 @@ The Rust native addon is built earlier still, in `build-server-native`
 (`:116-158`), and consumed by `build-server` through the
 `server-native-*` artifacts (`:176-181`).
 
+> **No longer true.** All of those jobs are gone. `build-images.yml` is now a
+> single job — checkout, version stamp, buildx, `docker build` — that passes
+> `BUILD_TYPE` and `GITHUB_SHA` as build arguments and produces the artifacts
+> inside the image. No artifact is uploaded, downloaded or moved on the CI
+> host.
+
 ### F4 — The Render image inherits a published image and compiles nothing
 
 `.render/Dockerfile:4` is `FROM ghcr.io/toeverything/affine:stable`. The file's
@@ -151,11 +171,22 @@ instructions are a `COPY` of the start script (`:6`) and a `CMD` (`:8`).
 `dockerContext: ./.render`, so the build context is the two-file `.render`
 directory — the application source is not even reachable from it.
 
+> **No longer true.** `.render/Dockerfile` and `.render/start.sh` are deleted —
+> the links above are dead, and kept only so the finding still reads as
+> written. `render.yaml` builds `.github/deployment/node/Dockerfile` at
+> `dockerContext: .`, and the two jobs `start.sh` performed (hostname default,
+> bootstrap before `exec`) moved into Render's `dockerCommand`.
+
 ### F5 — The compose stack consumes a published image; it never builds one
 
 `.docker/selfhost/compose.yml:4` and `:24` both set
 `image: ghcr.io/toeverything/affine:stable`. Neither service declares a `build:`
 key, so `docker compose build` has nothing to build.
+
+> **No longer true.** Both services now carry `image: affine:selfhost` and a
+> `build:` at the repository root through a shared YAML anchor, so
+> `docker compose build` builds the image and neither service can fall back to
+> a registry lookup.
 
 ### F6 — Startup bootstrapping exists, in two places, calling the same script
 
@@ -353,6 +384,12 @@ From **F2**: the first `COPY` whose source is missing aborts the build. Since
 (`Dockerfile:6` would succeed, copying source without `dist`/`node_modules`).
 Not verified by running a build here — see **U2**.
 
+> **No longer true.** That command is now the documented way to build the
+> image from a clean clone — see
+> [building-the-image.md](./building-the-image.md). The premise this inference
+> rested on (**F2**) is gone; **U2** remains open, since no build has been run
+> from this environment either.
+
 ### I2 — No change made in this repository can reach the Render deployment
 
 From **F4**: `.render/Dockerfile` pins `:stable`, and its build context excludes
@@ -498,5 +535,6 @@ This is a product decision, not a fact recoverable from the tree.
 
 ## Related documents
 
+- [building-the-image.md](./building-the-image.md) — building the self-host image from source, as it works today
 - [BUILDING.md](../BUILDING.md) — building the web app from source
 - [developing-server.md](../developing-server.md) — running the server locally
