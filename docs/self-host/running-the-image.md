@@ -38,8 +38,9 @@ docker run --detach --name affine \
 ```
 
 That is the whole deployment: one container holding the server, its database and
-its cache. Open <http://localhost:3010> once the log settles, and go on to
-[the first account](#the-first-account).
+its cache. Open <http://localhost:3010> once the log settles and sign in with the
+account in [the first account](#the-first-account) — the image brings one up with
+it.
 
 The three `--volume` flags are what keep the data across `docker rm`; they are
 covered in [persisting the data inside the image](#persisting-the-data-inside-the-image).
@@ -53,8 +54,8 @@ What happens before the server starts, in order:
 2. The `affine` role and the `affine` database are created, if the cluster does
    not already have them, along with the `vector` and `pgcrypto` extensions.
 3. Redis is started on `127.0.0.1:6379`.
-4. The initial setup runs — the server's private key, then the schema and data
-   migrations.
+4. The initial setup runs — the server's private key, the schema and data
+   migrations, then the standard administrator on a database that has no users.
 5. The server takes over the container.
 
 Both embedded servers listen on the loopback address only, and both are reached
@@ -99,10 +100,10 @@ the one inside the image. Setting a variable to nothing —
 `docker run --env DATABASE_URL` with no value — is a request for the in-image
 database, not an attempt to connect to the empty string.
 
-| Variable            | Empty                                        | Set                                                     |
-| ------------------- | -------------------------------------------- | ------------------------------------------------------- |
-| `DATABASE_URL`      | Starts PostgreSQL inside the image           | Connects to that connection string; starts nothing      |
-| `REDIS_SERVER_HOST` | Starts Redis inside the image                | Connects to that host; starts nothing                   |
+| Variable            | Empty                              | Set                                                |
+| ------------------- | ---------------------------------- | -------------------------------------------------- |
+| `DATABASE_URL`      | Starts PostgreSQL inside the image | Connects to that connection string; starts nothing |
+| `REDIS_SERVER_HOST` | Starts Redis inside the image      | Connects to that host; starts nothing              |
 
 The two are independent. An external database with the in-image cache, or the
 reverse, is a supported combination — each target is decided on its own.
@@ -131,11 +132,11 @@ image that made it for you would be making it wrong for somebody. What that
 means in practice: mount these paths, or lose what they hold when the container
 is removed.
 
-| Path                        | Holds                                                     | Mount It When                     |
-| --------------------------- | --------------------------------------------------------- | --------------------------------- |
-| `/root/.affine`             | The server's private key, uploaded blobs and avatars      | Always                            |
-| `/var/lib/postgresql/data`  | The in-image database cluster — every document and user   | `DATABASE_URL` is empty           |
-| `/var/lib/redis`            | The in-image cache's snapshots                            | `REDIS_SERVER_HOST` is empty      |
+| Path                       | Holds                                                   | Mount It When                |
+| -------------------------- | ------------------------------------------------------- | ---------------------------- |
+| `/root/.affine`            | The server's private key, uploaded blobs and avatars    | Always                       |
+| `/var/lib/postgresql/data` | The in-image database cluster — every document and user | `DATABASE_URL` is empty      |
+| `/var/lib/redis`           | The in-image cache's snapshots                          | `REDIS_SERVER_HOST` is empty |
 
 `/root/.affine` matters on both paths and is the one people forget. Losing it
 loses the uploaded blobs, and it loses `private.key` — which the next boot
@@ -161,10 +162,31 @@ before it acts:
 - The private key is generated only when the file is absent.
 - `prisma migrate deploy` applies the migrations that have not been applied, and
   the data migrations record what they have run.
+- The standard administrator is created only when the database holds no users at
+  all — not "no administrator", and not "none that this image created".
 
 So a second boot repeats nothing and fails nothing. This holds for a database
 populated by an entirely different container too, which is what makes upgrading
 the image a matter of replacing the container.
+
+The seed is the step most likely to be suspected of breaking the second boot, so
+it says out loud what it decided. On the boot that creates the account:
+
+```text
+[StandardSeedCommand] No users in this database — created the standard administrator admin@example.com.
+```
+
+and on every boot after it:
+
+```text
+[StandardSeedCommand] This database already holds 1 user — the standard seed created nothing.
+```
+
+Both are ordinary log lines, and the step exits successfully either way — the
+second one is a report, not a warning. The count belongs to the database rather
+than to the seed, so a server with fifty accounts says fifty. Each line arrives
+behind the timestamp the server's logger puts in front of everything it writes;
+`[StandardSeedCommand]` is the part to grep for.
 
 The one thing that does not survive a restart is the pair of passwords for the
 in-image database and cache. They are minted per boot and exist only in the
@@ -172,23 +194,52 @@ running container, so a volume that outlives it carries no credential with it.
 
 ## The first account
 
-The image ships no account, and no environment variable creates one. The first
-administrator is created once, in the browser, on a server that has no users
-yet.
+The image comes up with one administrator already in it. The last step of the
+initial setup creates it, on a database that holds no users:
 
-1. Open <http://localhost:3010/admin>. While no user exists, the server sends
-   you to `/admin/setup` instead of a sign-in page.
-2. Fill in a name, an e-mail address and a password.
+| Field    | Value               |
+| -------- | ------------------- |
+| Name     | `Admin`             |
+| E-mail   | `admin@example.com` |
+| Password | `change-me`         |
 
-That form posts to `/api/setup/create-admin-user`, which refuses once a first
-user exists. The account it creates is an administrator, you are signed in as it
-immediately, and from then on `/admin` is an ordinary sign-in.
+Sign in with that e-mail and password at <http://localhost:3010>. The account is
+an administrator, so <http://localhost:3010/admin> opens the admin panel for it.
+
+These are a published default rather than a secret, and they are meant to read
+that way. The three values are a constant in
+[`standard-seed.ts`](../../packages/backend/server/src/data/commands/standard-seed.ts),
+so they are the same in this page, in every image built from this repository and
+in anyone else's copy of it. The address is under `example.com`, which RFC 2606
+reserves for documentation — it can collide with no real mailbox, and mail sent
+to it goes nowhere.
 
 > **Warning**
-> Until that first account exists, the setup page accepts anyone who can reach
-> the port — that is what "no users yet" means for an endpoint that has nobody to
-> authenticate against. Create the account as soon as the container is up, or
-> keep the port unreachable until you have.
+> Anyone who can reach the port can sign in as this administrator until the
+> password is changed. Change it before the container is reachable by anybody
+> but you, or keep the port unreachable until you have.
+
+To change it, sign in and open <http://localhost:3010/admin/accounts>, then on
+the `admin@example.com` row: **Reset Password**, **Copy and Close**, and open the
+copied link to set a new one. The server mints that link and hands it to the
+browser, so this path needs no mail server — which a self-host has only if you
+configured one. The password box in the account settings of the app itself takes
+the other route and sends a mail.
+
+Two ways to end up without this account:
+
+- Point `DATABASE_URL` at a database that already holds users. The seed asks
+  whether the database has any user at all, and creates nothing when the answer
+  is yes — so an existing deployment's database is left exactly as it is, and
+  upgrading a container never grows an extra administrator.
+- Create your own administrator in the admin panel first, then delete
+  `admin@example.com` from the same page. The next boot sees the account you
+  made and stays out of the way.
+
+The unauthenticated setup form at `/admin/setup` still exists, for a server that
+has no users at all. A container started from this image does not come up in
+that state: the seed runs before the server accepts requests, and `/admin/setup`
+redirects to `/admin` from then on.
 
 ## Reading the startup log
 
