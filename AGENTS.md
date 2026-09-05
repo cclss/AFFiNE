@@ -26,11 +26,14 @@ This page holds entry points. These six files hold the rules.
 | [conventions/deploy.md] | Image build and boot procedure, including what `.render/Dockerfile` does and does not do |
 | [preview.toml] | Preview exception configuration |
 
-> **Status — none of these six files exist in the repository yet.** This
-> contract is the first document of the set to land. Until the rest arrive,
-> every row above is a forward reference, and the detail you need is in the
-> source paths cited on this page. Do not treat a missing guide as permission to
-> invent its contents. The absence is recorded as a gap — see [Known Gaps].
+> **Status — five of the six exist; `preview.toml` does not.** The five guides
+> under `conventions/` are in the repository and tracked — `git ls-files
+> conventions` lists all five. Each was written against this repository, with
+> the `file:line` it was read from next to every claim, rather than copied from
+> a canonical original; see [Assumptions]. The preview exception configuration
+> has not landed, so that one row is still a forward reference. Do not treat its
+> absence as permission to invent its contents. The absence is recorded as a
+> gap — see [Known Gaps].
 
 ## Run It Locally
 
@@ -182,7 +185,7 @@ a defect to close, not a rule to follow.
 | No dummy account to document | `packages/backend/server/src/seed/index.ts:29-42,43-85` | `seed` generates entities from arguments with random attributes. There are no fixed credentials in the repository, so this contract cannot print a login to try |
 | The Dockerfile does not build the app | `.render/Dockerfile:4-8` | It starts `FROM ghcr.io/toeverything/affine:stable` and copies in a start script. Nothing is compiled inside it. There is no from-source image build path in the repository yet |
 | Deployment is not a single container | `render.yaml:8-52` | Web, PostgreSQL, and the key-value store are three separate services. Any instruction that assumes one self-contained container is wrong against this repository |
-| The topic guides this page delegates to do not exist | Repository tree — there is no `conventions/` directory at the root, and `git ls-files conventions preview.toml` returns nothing | Every link in [Topic Guides] resolves to a missing file. The six rows state the contract's document set, not the repository's current contents. Until each guide lands, the only detail available is the source paths cited on this page. No upstream text for the guides was found either — see [Assumptions] |
+| The preview exception configuration does not exist | Repository tree — `git ls-files preview.toml` returns nothing, while `git ls-files conventions` returns the five guides listed beside it | One link in [Topic Guides] still resolves to a missing file. The five topic guides have landed, so this is the last row of the contract's document set the repository does not hold. Until it lands, there is no preview exception configuration to read, and none of the guides describes one. No upstream text or schema for the file was found either — see [Assumptions] |
 | Server scripts need a native module `yarn install` does not build | `packages/backend/native/index.js:11`, `packages/backend/server/package.json:19` | After a clean `yarn install`, `yarn run seed` exits with `Error: Cannot find module './server-native.x64.node'`. `@affine/server-native` is a Rust napi module and its binary is not produced by install, so every First-Time Setup command sits behind a build step this contract cannot yet name — building it was attempted and the local linker failed, so no verified command is printed here **(assumption — needs confirming)** |
 
 These gaps are scheduled to be closed by later work. When one closes, the
@@ -199,9 +202,10 @@ Unresolved. Recorded so the next reader does not mistake them for settled facts.
   `rspack-dev-server` default. The effective port is
   **(assumption — needs confirming)**.
 - No upstream source text for the five topic guides or for `preview.toml` was
-  found in this repository. Their contents will be written against this
-  repository rather than copied from a canonical original
-  **(assumption — needs confirming)**.
+  found in this repository. The five guides were therefore written against this
+  repository — each claim carries the `file:line` it was read from — rather than
+  copied from a canonical original. That the result is what the contract naming
+  them intended is **(assumption — needs confirming)**.
 - The schema `preview.toml` must satisfy is unknown. It will be kept minimal
   until the schema is confirmed **(assumption — needs confirming)**.
 
