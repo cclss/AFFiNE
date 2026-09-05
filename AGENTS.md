@@ -30,7 +30,7 @@ This page holds entry points. These six files hold the rules.
 > contract is the first document of the set to land. Until the rest arrive,
 > every row above is a forward reference, and the detail you need is in the
 > source paths cited on this page. Do not treat a missing guide as permission to
-> invent its contents.
+> invent its contents. The absence is recorded as a gap — see [Known Gaps].
 
 ## Run It Locally
 
@@ -173,6 +173,7 @@ a defect to close, not a rule to follow.
 | No dummy account to document | `packages/backend/server/src/seed/index.ts:29-42,43-85` | `seed` generates entities from arguments with random attributes. There are no fixed credentials in the repository, so this contract cannot print a login to try |
 | The Dockerfile does not build the app | `.render/Dockerfile:4-8` | It starts `FROM ghcr.io/toeverything/affine:stable` and copies in a start script. Nothing is compiled inside it. There is no from-source image build path in the repository yet |
 | Deployment is not a single container | `render.yaml:8-52` | Web, PostgreSQL, and the key-value store are three separate services. Any instruction that assumes one self-contained container is wrong against this repository |
+| The topic guides this page delegates to do not exist | Repository tree — there is no `conventions/` directory at the root, and `git ls-files conventions preview.toml` returns nothing | Every link in [Topic Guides] resolves to a missing file. The six rows state the contract's document set, not the repository's current contents. Until each guide lands, the only detail available is the source paths cited on this page. No upstream text for the guides was found either — see [Assumptions] |
 
 These gaps are scheduled to be closed by later work. When one closes, the
 section above it must be rewritten to describe what the command then does —
@@ -200,4 +201,6 @@ Unresolved. Recorded so the next reader does not mistake them for settled facts.
 [conventions/networking.md]: ./conventions/networking.md
 [conventions/deploy.md]: ./conventions/deploy.md
 [preview.toml]: ./preview.toml
+[Topic Guides]: #topic-guides
 [Known Gaps]: #known-gaps
+[Assumptions]: #assumptions
