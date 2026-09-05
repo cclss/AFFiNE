@@ -90,7 +90,7 @@ RUN --mount=type=cache,target=/root/.yarn/berry/cache,sharing=locked \
 # Architecture: the native addon is compiled for the build host only, with no
 # `--target` and no cross toolchain. Producing a multi-architecture image is a
 # `docker buildx build --platform` concern, not a second Cargo target — see
-# context/decisions/2026-09-05-docker-build-stage-single-arch.md.
+# .charlie/context/decisions/2026-09-05-docker-build-stage-single-arch.md.
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app

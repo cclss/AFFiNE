@@ -13,9 +13,9 @@
 > and `render.yaml` builds the same Dockerfile — so `.render/Dockerfile` and
 > `.render/start.sh`, cited below and linked from the table, no longer exist.
 > The document is kept as the baseline those changes were reviewed against.
-> The findings the source build invalidates — **F1**–**F5** and **I1** — carry
-> an inline note recording what replaced them. For how to build the image
-> today, see [building-the-image.md](./building-the-image.md).
+> The findings the source build invalidates — **F1**–**F5**, **I1**, **I2** and
+> **U1** — carry an inline note recording what replaced them. For how to build
+> the image today, see [building-the-image.md](./building-the-image.md).
 
 The ship-ready contract for self-hosting is: _clone the repository, build one
 image from source, run it_. This document locates every point where the current
@@ -32,8 +32,8 @@ Build and startup definitions:
 | [`.github/workflows/build-images.yml`](../../.github/workflows/build-images.yml)       | The CI pipeline that feeds that Dockerfile                   |
 | [`.dockerignore`](../../.dockerignore)                                                 | What reaches the build context                               |
 | [`.gitignore`](../../.gitignore)                                                       | What a fresh clone does not contain                          |
-| [`.render/Dockerfile`](../../.render/Dockerfile)                                       | The Render deployment image                                  |
-| [`.render/start.sh`](../../.render/start.sh)                                           | The Render entrypoint                                        |
+| `.render/Dockerfile`                                                                   | The Render deployment image *(deleted; see the banner)*      |
+| `.render/start.sh`                                                                     | The Render entrypoint *(deleted; see the banner)*            |
 | [`render.yaml`](../../render.yaml)                                                     | The Render service, disk and variable wiring                 |
 | [`.docker/selfhost/compose.yml`](../../.docker/selfhost/compose.yml)                   | The documented self-host stack                               |
 | [`package.json`](../../package.json)                                                   | Workspace and registry declarations                          |
@@ -347,17 +347,17 @@ Unset means the feature is inert, not that the server fails.
 
 ### F16 — Names that look runtime but are not
 
-| Variable                                                                            | Source                                     | Why it is not a runtime input of the server                  |
-| ----------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------ |
-| `AFFiNE_PRO_PUBLIC_KEY`                                                             | `src/base/helpers/crypto.ts:255`           | Guarded by `!env.prod`; ignored in a production build        |
-| `AFFiNE_PRO_LICENSE_AES_KEY`                                                        | `src/base/helpers/crypto.ts:271`           | Same guard                                                   |
-| `HOSTNAME`, `CONTAINER_NAME`                                                        | `src/plugins/gcloud/metrics.ts:20-24`      | Metric labels in the GCP plugin only                         |
-| `npm_lifecycle_event`                                                               | `src/cli.ts:13`                            | Names the CLI program in help output                         |
-| `APP_ROOT`, `AFFINE_DOCKER_CLEAN`, `AFFINE_DOCKER_CLEAN_VERBOSE`                    | `scripts/docker-clean.mjs:9-13`            | Build-time cleanup control                                   |
-| `TARGETARCH`, `TARGETVARIANT`                                                       | `.github/deployment/node/Dockerfile:12-13` | BuildKit build args                                          |
-| `LD_PRELOAD`                                                                        | `.github/deployment/node/Dockerfile:31`    | Set by the image to preload jemalloc                         |
-| `RENDER_EXTERNAL_HOSTNAME`                                                          | `.render/start.sh:6`                       | Supplied by Render; only used to derive `AFFINE_SERVER_HOST` |
-| `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_INITDB_ARGS`, `POSTGRES_HOST_AUTH_METHOD` | `.docker/selfhost/compose.yml:55-58`       | Read by the sibling `pgvector` image, never by the app       |
+| Variable                                                                            | Source                                         | Why it is not a runtime input of the server                  |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| `AFFiNE_PRO_PUBLIC_KEY`                                                             | `src/base/helpers/crypto.ts:255`               | Guarded by `!env.prod`; ignored in a production build        |
+| `AFFiNE_PRO_LICENSE_AES_KEY`                                                        | `src/base/helpers/crypto.ts:271`               | Same guard                                                   |
+| `HOSTNAME`, `CONTAINER_NAME`                                                        | `src/plugins/gcloud/metrics.ts:20-24`          | Metric labels in the GCP plugin only                         |
+| `npm_lifecycle_event`                                                               | `src/cli.ts:13`                                | Names the CLI program in help output                         |
+| `APP_ROOT`, `AFFINE_DOCKER_CLEAN`, `AFFINE_DOCKER_CLEAN_VERBOSE`                    | `scripts/docker-clean.mjs:9-13`                | Build-time cleanup control                                   |
+| `TARGETARCH`, `TARGETVARIANT`                                                       | `.github/deployment/node/Dockerfile:12-13`     | BuildKit build args                                          |
+| `LD_PRELOAD`                                                                        | `.github/deployment/node/Dockerfile:31`        | Set by the image to preload jemalloc                         |
+| `RENDER_EXTERNAL_HOSTNAME`                                                          | `render.yaml:24-28` (was `.render/start.sh:6`) | Supplied by Render; only used to derive `AFFINE_SERVER_HOST` |
+| `POSTGRES_USER`, `POSTGRES_DB`, `POSTGRES_INITDB_ARGS`, `POSTGRES_HOST_AUTH_METHOD` | `.docker/selfhost/compose.yml:55-58`           | Read by the sibling `pgvector` image, never by the app       |
 
 ### F17 — No environment variable selects a storage path
 
@@ -395,6 +395,10 @@ Not verified by running a build here — see **U2**.
 From **F4**: `.render/Dockerfile` pins `:stable`, and its build context excludes
 the source tree. The deployed artifact is therefore whatever was last published
 under that tag, independent of the commit being deployed.
+
+> **No longer true.** `render.yaml:14-15` builds
+> `.github/deployment/node/Dockerfile` with `dockerContext: .`, so the
+> deployed artifact is the commit being deployed. The premise (**F4**) is gone.
 
 ### I3 — Moving the database and cache into the image is not a Dockerfile-only change
 
@@ -468,6 +472,11 @@ These cannot be settled from this repository. Each names what would settle it.
 `.render/Dockerfile:4` and `compose.yml:4`/`:24` consume a tag whose contents
 are decided by a past CI run. Settling this requires pulling the image and
 comparing it to a locally produced one.
+
+> **No longer relevant.** Neither consumer reads `:stable` any more —
+> `compose.yml` builds `affine:selfhost` from source, and `render.yaml`
+> builds the same Dockerfile. Nothing in this repository depends on the
+> published tag's contents.
 
 ### U2 — Whether the CI install sequence reproduces inside a Docker build
 

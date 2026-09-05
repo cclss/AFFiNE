@@ -1,6 +1,6 @@
 # Building the Self-Host Image from Source
 
-> **Note**
+> **Warning**
 > This document is not guaranteed to be up-to-date.
 > If you find any outdated information, please feel free to open an issue or submit a PR.
 
