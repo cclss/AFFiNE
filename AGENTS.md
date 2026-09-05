@@ -27,14 +27,15 @@ This page holds entry points. These six files hold the rules.
 | [preview.toml] | Preview exception configuration |
 
 > **Status — all six are in the repository; `preview.toml` declares nothing.**
-> The five guides under `conventions/` are tracked — `git ls-files conventions`
-> lists all five. Each was written against this repository, with the
-> `file:line` it was read from next to every claim, rather than copied from a
-> canonical original; see [Assumptions]. The preview exception configuration is
-> at the root, but it holds comments only and parses as an empty TOML document:
-> no upstream text or schema for it was found, so no keys were invented. Do not
-> treat the empty file as permission to invent its contents. That it configures
-> nothing yet is recorded as a gap — see [Known Gaps].
+> Every row above resolves to a tracked file — `git ls-files conventions
+> preview.toml` lists all six. Each guide under `conventions/` was written
+> against this repository, with the `file:line` it was read from next to every
+> claim, rather than copied from a canonical original; see [Assumptions]. The
+> preview exception configuration is at the root, but it holds comments only
+> and parses as an empty TOML document: no upstream text or schema for it was
+> found, so no keys were invented. Do not treat the empty file as permission to
+> invent its contents. That it configures nothing yet is recorded as a gap —
+> see [Known Gaps].
 
 ## Run It Locally
 
@@ -186,7 +187,7 @@ a defect to close, not a rule to follow.
 | No dummy account to document | `packages/backend/server/src/seed/index.ts:29-42,43-85` | `seed` generates entities from arguments with random attributes. There are no fixed credentials in the repository, so this contract cannot print a login to try |
 | The Dockerfile does not build the app | `.render/Dockerfile:4-8` | It starts `FROM ghcr.io/toeverything/affine:stable` and copies in a start script. Nothing is compiled inside it. There is no from-source image build path in the repository yet |
 | Deployment is not a single container | `render.yaml:8-52` | Web, PostgreSQL, and the key-value store are three separate services. Any instruction that assumes one self-contained container is wrong against this repository |
-| The preview exception configuration declares nothing | `preview.toml:1-9` | The file is at the root and every line in it is a comment, so it parses as an empty TOML document and configures no preview exception. No upstream text or schema for it was found, so no keys were invented — see [Assumptions]. None of the five guides describes one either. Anything reading this file for a preview exception today gets nothing |
+| The preview exception configuration exists in minimal form only, with its schema unsettled | `preview.toml:1-9` | The file is at the root and tracked, but every line in it is a comment, so it parses as an empty TOML document and declares no preview exception. No upstream text or schema for it was found, so no keys were invented — see [Assumptions]. None of the five guides describes one either. Anything reading this file for a preview exception today gets nothing, and it stays that way until the schema is confirmed |
 | Server scripts need a native module `yarn install` does not build | `packages/backend/native/index.js:11`, `packages/backend/server/package.json:19` | After a clean `yarn install`, `yarn run seed` exits with `Error: Cannot find module './server-native.x64.node'`. `@affine/server-native` is a Rust napi module and its binary is not produced by install, so every First-Time Setup command sits behind a build step this contract cannot yet name — building it was attempted and the local linker failed, so no verified command is printed here **(assumption — needs confirming)** |
 
 These gaps are scheduled to be closed by later work. When one closes, the
