@@ -44,6 +44,8 @@ export class RunCommand extends PackageCommand {
 
       \`affine clean\`           Clean the output files of ts, cargo, bundler outputs, etc.
 
+      \`affine setup\`           Migrate the database and seed the standard local accounts
+
       \`affine bundle\`          Bundle the packages
 
       \`affine build\`           A proxy for <-p package>'s \`build\` script
@@ -60,6 +62,7 @@ export class RunCommand extends PackageCommand {
       [`Clean dist of each package`, '$0 clean --dist'],
       [`Clean node_modules under each package`, '$0 clean --node-modules'],
       [`Clean everything`, '$0 clean --all'],
+      [`Set up the local environment`, '$0 setup'],
       [`Run 'build' script for @affine/web`, '$0 build -p web'],
       [
         `Run 'build' script for @affine/web with all deps prebuild before`,

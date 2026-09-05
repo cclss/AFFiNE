@@ -30,6 +30,16 @@ yarn affine clean --dist --rust
 yarn affine clean --node-modules
 ```
 
+### Setup
+
+> Bring a local environment up to a working state: database migrations, data migrations, then the standard seed accounts. Safe to rerun against a database that already holds data.
+
+```bash
+yarn affine setup
+# print the ordered steps without running them
+yarn affine setup --dry-run
+```
+
 ### Init
 
 > Generate files that make the monorepo work properly, the per project codegen will not be included anymore

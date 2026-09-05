@@ -9,6 +9,7 @@ import type { CliContext } from './context';
 import { DevCommand } from './dev';
 import { InitCommand } from './init';
 import { RunCommand } from './run';
+import { SetupCommand } from './setup';
 
 const cli = new Cli<CliContext>({
   binaryName: 'affine',
@@ -25,6 +26,7 @@ cli.register(BuildCommand);
 cli.register(DevCommand);
 cli.register(BundleCommand);
 cli.register(CertCommand);
+cli.register(SetupCommand);
 
 await cli.runExit(process.argv.slice(2), {
   workspace: new Workspace(),
