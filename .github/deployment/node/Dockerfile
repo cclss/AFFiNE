@@ -218,6 +218,148 @@ RUN set -eux; \
 # emitted alongside it — hence the ordering against the Rust build above.
 RUN set -eux; \
   yarn workspace @affine/server build; \
-  test -f packages/backend/server/dist/main.js
+  test -f packages/backend/server/dist/main.js; \
+  test -f packages/backend/server/dist/server-native.node
 
-# The runtime stage follows in the next step of this change.
+
+# ---------------------------------------------------------------------------
+# runtime-deps — the production dependency closure of @affine/server.
+#
+# The `build` stage's node_modules holds the whole workspace: every frontend
+# dependency, every toolchain, every test framework. None of it runs the
+# server. This stage installs the other tree — `@affine/server` and its
+# production dependencies only — from the same lockfile, so the runtime layer
+# carries dependencies the server actually loads.
+#
+# It installs from the pruned manifests rather than the source tree: nothing
+# here needs the sources, so an application edit does not re-resolve the
+# dependency graph.
+# ---------------------------------------------------------------------------
+FROM ${NODE_IMAGE} AS runtime-deps
+WORKDIR /app
+
+# git:     a handful of dependencies resolve from git remotes (see yarn.lock).
+# openssl: Prisma detects its query engine by the installed OpenSSL version,
+#          during `prisma generate` here and again when the server connects.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV CI=true \
+    NPM_TOKEN=NONE
+
+COPY --from=manifests /manifests /app
+
+# `prisma generate` reads this schema and writes the typed client into
+# node_modules/.prisma/client. It is the one source file the install needs.
+COPY packages/backend/server/schema.prisma packages/backend/server/schema.prisma
+
+# One layer, three steps, because they are one artifact:
+#
+#   focus --production   installs the dependency closure of a single workspace.
+#                        Build scripts stay off (.yarnrc.yml), except for the
+#                        packages the root package.json marks `built: true` —
+#                        which is how @prisma/engines fetches its engines.
+#   prisma generate      the server's postinstall, run explicitly. Yarn does
+#                        run it during the focus install, but only because the
+#                        schema is copied above and the build state is cold —
+#                        neither is a guarantee, and a server without a
+#                        generated Prisma client cannot start.
+#   mv                   the final image is the server package, so its
+#                        node_modules must sit at the package root. Doing it
+#                        inside this RUN keeps the moved tree in one layer
+#                        instead of writing it twice.
+RUN --mount=type=cache,target=/root/.yarn/berry/cache,sharing=locked \
+  set -eux; \
+  set -- .yarn/releases/yarn-*.cjs; \
+  yarn_release="$1"; \
+  test -f "$yarn_release"; \
+  node "$yarn_release" workspaces focus @affine/server --production; \
+  node "$yarn_release" workspace @affine/server prisma generate; \
+  test -d node_modules/.prisma/client; \
+  test -x node_modules/.bin/prisma; \
+  mv node_modules packages/backend/server/node_modules
+
+
+# ---------------------------------------------------------------------------
+# runtime-assets — assemble /app as the running server expects it, then prune.
+#
+# Pruning has to happen before the final stage copies the tree: deleting a file
+# in the layer that ships it removes nothing from the image. So the layout is
+# built here, cleaned here, and lands in the final image as a single COPY.
+# ---------------------------------------------------------------------------
+FROM ${NODE_IMAGE} AS runtime-assets
+WORKDIR /app
+
+# Supplied by BuildKit. docker-clean.mjs uses them to decide which
+# architecture's Prisma engines to keep.
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+# openssl: docker-clean.mjs runs `prisma -v`, which resolves an engine.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=runtime-deps /app/packages/backend/server/node_modules ./node_modules
+COPY --from=build /app/packages/frontend/apps/web/dist ./static
+COPY --from=build /app/packages/frontend/admin/dist ./static/admin
+COPY --from=build /app/packages/frontend/apps/mobile/dist ./static/mobile
+COPY packages/backend/server/scripts ./scripts
+COPY packages/backend/server/schema.prisma ./schema.prisma
+# Not decoration: scripts/self-host-predeploy.js shells out to `yarn cli run`,
+# and `cli` is a script defined in this manifest. Without it the scripts copied
+# above cannot run.
+COPY packages/backend/server/package.json ./package.json
+# schema.prisma without the migration history is a schema Prisma cannot deploy —
+# `prisma migrate deploy` reads this directory, and scripts/self-host-predeploy.js
+# (shipped above) calls it.
+COPY packages/backend/server/migrations ./migrations
+
+# Drops sourcemaps and development leftovers from node_modules, deduplicates
+# identical static assets and Prisma engine copies into hardlinks. Runs before
+# dist arrives on purpose: its dist rule keeps the one `server-native.<arch>.node`
+# matching TARGETARCH, a rule written for the release pipeline where three
+# prebuilt binaries are staged. This build compiles exactly one, named
+# `server-native.node`, which that rule would not recognise — and would delete.
+RUN AFFINE_DOCKER_CLEAN=1 \
+    TARGETARCH="${TARGETARCH}" \
+    TARGETVARIANT="${TARGETVARIANT}" \
+    node ./scripts/docker-clean.mjs
+
+# The server bundle, and the native addon the bundle requires next to it.
+# Sourcemaps are kept here (and only here) so runtime stack traces stay
+# readable.
+COPY --from=build /app/packages/backend/server/dist ./dist
+
+
+# ---------------------------------------------------------------------------
+# runtime — the shipped image.
+#
+# Nothing that built the application is here: no Rust toolchain, no C
+# compiler, no source tree, no development dependencies. Just Node, the
+# bundle, its production dependencies and the static assets.
+# ---------------------------------------------------------------------------
+FROM ${NODE_IMAGE} AS runtime
+WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    libjemalloc2 \
+    openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+# jemalloc keeps the resident set stable under the server's allocation pattern;
+# glibc's allocator fragments and grows over long uptimes.
+ENV LD_PRELOAD=libjemalloc.so.2
+
+COPY --from=runtime-assets /app /app
+
+EXPOSE 3010
+
+CMD ["node", "./dist/main.js"]
