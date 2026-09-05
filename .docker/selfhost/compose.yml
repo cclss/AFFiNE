@@ -1,7 +1,25 @@
 name: affine
+
+# The server and the migration job are the same image, built from the sources in
+# this repository — clone, `docker compose build`, `docker compose up`. Nothing
+# is pulled from a published tag, so the running stack is always the code that
+# is checked out here.
+#
+# Both services carry the build definition rather than only the server, so that
+# `docker compose build` and `docker compose up <service>` behave the same for
+# either one and neither can fall back to a registry lookup for `affine:selfhost`.
+# The second build is a full layer-cache hit.
+x-affine-image: &affine-image
+  image: affine:selfhost
+  build:
+    # The Dockerfile compiles the workspace, so the context is the repository
+    # root, not this directory.
+    context: ../..
+    dockerfile: .github/deployment/node/Dockerfile
+
 services:
   affine:
-    image: ghcr.io/toeverything/affine:stable
+    <<: *affine-image
     container_name: affine_server
     ports:
       - '3010:3010'
@@ -21,7 +39,7 @@ services:
     restart: unless-stopped
 
   affine_migration:
-    image: ghcr.io/toeverything/affine:stable
+    <<: *affine-image
     container_name: affine_migration_job
     volumes:
       - ./data/storage:/root/.affine/storage

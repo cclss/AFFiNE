@@ -9,9 +9,23 @@ projects:
             name: affine
             runtime: docker
             plan: standard
-            # The Dockerfile adds a start script to ghcr.io/toeverything/affine:stable. It runs migrations and the server
-            dockerfilePath: ./.render/Dockerfile
-            dockerContext: ./.render
+            # Built from the sources in this repository, by the same Dockerfile
+            # the self-host image uses. Nothing is pulled from a published tag.
+            dockerfilePath: ./.github/deployment/node/Dockerfile
+            dockerContext: .
+            # That image's CMD is `node ./dist/main.js`. Render needs two things
+            # in front of it, and neither belongs in the image:
+            #
+            #   1. The hostname Render assigns, unless AFFINE_SERVER_HOST is
+            #      already set to a custom domain.
+            #   2. The bootstrap: generates the server private key on first
+            #      boot, then runs the Prisma and data migrations. It is
+            #      idempotent, so it is safe on every boot.
+            dockerCommand: >-
+              sh -c 'export
+              AFFINE_SERVER_HOST="${AFFINE_SERVER_HOST:-${RENDER_EXTERNAL_HOSTNAME:-localhost}}"
+              && node ./scripts/self-host-predeploy.js && exec node
+              ./dist/main.js'
             healthCheckPath: /info
             disk:
               # Uploaded blobs (~/.affine/storage) and the generated private key

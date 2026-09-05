@@ -5,6 +5,15 @@
 > definitions in this repository do **today**, so that a change to them can be
 > reviewed against a written baseline. It does not propose a fix.
 
+> **Superseded — this describes the state before the source build landed.**
+> The findings below were written against the prebuilt-artifact pipeline. That
+> pipeline is gone: `.github/deployment/node/Dockerfile` now installs, compiles
+> and assembles from source, `.github/workflows/build-images.yml` is a checkout
+> and a `docker build`, `.docker/selfhost/compose.yml` carries a `build:` key,
+> and `render.yaml` builds the same Dockerfile — so `.render/Dockerfile` and
+> `.render/start.sh`, cited below and linked from the table, no longer exist.
+> The document is kept as the baseline those changes were reviewed against.
+
 The ship-ready contract for self-hosting is: _clone the repository, build one
 image from source, run it_. This document locates every point where the current
 definitions fall short of that, and every environment variable the app reads at
