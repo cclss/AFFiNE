@@ -1,3 +1,4 @@
+import { formatProductionRefusal, type ProductionSignal } from './environment';
 import {
   type SeededAccount,
   STANDARD_SEED_ACCOUNTS,
@@ -78,5 +79,30 @@ ${table}
 
 ${summarize(result.created, result.accounts.length)}
 Sign in with these credentials. They are for local development only, never seed them into a production database.
+`;
+}
+
+/**
+ * Formats a refused standard seed run for the terminal.
+ *
+ * The refusal notice supplies the verdict and its evidence — every blocking
+ * setting named with the value it actually holds, and what unsetting it would
+ * allow. This block wraps that in the state of the run, which the notice alone
+ * cannot report: the database is untouched, so nothing needs undoing, and the
+ * whole command can simply be repeated once the settings are gone.
+ *
+ * `affine setup` is named rather than the seed script because setup is the
+ * documented way into the standard profile, and the step it stopped on is the
+ * last one — there is nothing left to resume past.
+ */
+export function formatSeedRefusalReport(
+  signals: readonly ProductionSignal[]
+): string {
+  return `
+Standard seed profile — not run
+
+${formatProductionRefusal(signals)}
+
+Nothing was written to the database. Clear the settings listed above, then run \`yarn affine setup\` again.
 `;
 }

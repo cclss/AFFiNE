@@ -1,6 +1,7 @@
 import test from 'ava';
 
-import { formatStandardSeedReport } from '../report';
+import { detectProductionSignals } from '../environment';
+import { formatSeedRefusalReport, formatStandardSeedReport } from '../report';
 import {
   type SeededAccount,
   STANDARD_SEED_ADMIN,
@@ -134,4 +135,79 @@ test('warns that the credentials are local only', t => {
     formatStandardSeedReport(firstRun()),
     /local development only, never seed them into a production database/
   );
+});
+
+/** Signals as the guard actually reports them, without touching process.env. */
+function blocked(source: NodeJS.ProcessEnv) {
+  const signals = detectProductionSignals(source);
+
+  if (!signals.length) {
+    throw new Error(`No signal detected for ${JSON.stringify(source)}`);
+  }
+
+  return signals;
+}
+
+const bothBlocked = () =>
+  blocked({ NODE_ENV: 'production', AFFINE_ENV: 'beta' });
+
+test('names every blocking setting with the value it actually holds', t => {
+  const report = formatSeedRefusalReport(bothBlocked());
+
+  t.true(report.includes('NODE_ENV=production'));
+  t.true(report.includes('AFFINE_ENV=beta'));
+});
+
+test('gives each blocking setting a reason', t => {
+  const report = formatSeedRefusalReport(bothBlocked());
+
+  for (const signal of bothBlocked()) {
+    t.true(
+      report.includes(`${signal.name}=${signal.value} — ${signal.reason}`),
+      `${signal.name} is named without its reason`
+    );
+  }
+});
+
+test('reports only the settings that blocked this run', t => {
+  const report = formatSeedRefusalReport(blocked({ AFFINE_ENV: 'production' }));
+
+  t.true(report.includes('AFFINE_ENV=production'));
+  t.false(report.includes('NODE_ENV'));
+});
+
+test('states what the refusal is protecting', t => {
+  t.regex(formatSeedRefusalReport(bothBlocked()), /publicly known passwords/);
+});
+
+test('says the database was left untouched', t => {
+  t.true(
+    formatSeedRefusalReport(bothBlocked()).includes(
+      'Nothing was written to the database'
+    )
+  );
+});
+
+test('tells the developer how to clear the block and what to run', t => {
+  const report = formatSeedRefusalReport(bothBlocked());
+
+  t.regex(report, /Unset `NODE_ENV` and `AFFINE_ENV`/);
+  t.regex(report, /run `yarn affine setup` again/);
+});
+
+test('withholds the credentials it refused to create', t => {
+  const report = formatSeedRefusalReport(bothBlocked());
+
+  for (const account of [STANDARD_SEED_USER, STANDARD_SEED_ADMIN]) {
+    t.false(report.includes(account.password));
+    t.false(report.includes(account.email));
+  }
+});
+
+test('indents the evidence under the verdict it supports', t => {
+  const lines = formatSeedRefusalReport(bothBlocked()).split('\n');
+  const evidence = lines.filter(line => line.includes('NODE_ENV=production'));
+
+  t.is(evidence.length, 1);
+  t.is(evidence[0], `  ${evidence[0].trim()}`);
 });

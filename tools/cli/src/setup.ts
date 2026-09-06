@@ -78,6 +78,19 @@ function renderTable(rows: string[][]): string {
 }
 
 /**
+ * What a thrown cause has to say for itself, as a clause. Non-errors are
+ * stringified rather than dropped: a rejection carrying a plain value is still
+ * more than the developer would otherwise be told.
+ */
+function describeCause(cause: unknown): string {
+  const message = (
+    cause instanceof Error ? cause.message : String(cause)
+  ).trim();
+
+  return message.length ? message : 'the step failed without a message';
+}
+
+/**
  * Formats the ordered steps for `--dry-run`.
  *
  * The plan states plainly that nothing ran, so a dry run can never be mistaken
@@ -156,10 +169,15 @@ export class SetupCommand extends Command {
     try {
       exitCode = await this.cli.run(step.args);
     } catch (cause) {
+      // The step threw before it could report for itself, so this error is the
+      // only account of what went wrong.
       throw this.stepFailure(step, at, { cause });
     }
 
     if (exitCode !== 0) {
+      // The step already printed why it stopped — a refused seed prints the
+      // settings that blocked it — and that output stands as the reason. Adding
+      // nothing here keeps it the last word on the subject.
       throw this.stepFailure(step, at);
     }
   }
@@ -168,13 +186,26 @@ export class SetupCommand extends Command {
    * Names the step that failed and the command to retry it with. Setup stops
    * here: a later step run on a half-migrated database would fail in a way
    * that no longer points at the actual cause.
+   *
+   * A `cause`, when there is one, is restated in the message rather than only
+   * attached to it. The error goes to clipanion's formatter, which prints the
+   * message and the stack and drops `cause` entirely — attaching it alone would
+   * lose the very thing the developer needs.
    */
-  private stepFailure(step: SetupStep, at: string, options?: ErrorOptions) {
+  private stepFailure(step: SetupStep, at: string, thrown?: ErrorOptions) {
     this.logger.error(`Step ${at} ${step.name}: failed`);
 
+    // Absence of `thrown` — not an undefined cause inside it — is what says the
+    // step ran and printed its own account of what stopped it. A refused seed
+    // prints the settings that blocked it, and pointing at that output beats
+    // restating it in weaker words.
+    const reason = thrown
+      ? `${describeCause(thrown.cause)}. Fix it and rerun`
+      : 'Fix the error above and rerun';
+
     return new Error(
-      `Setup failed at step ${at} ${step.name}. Fix the error above and rerun \`yarn affine setup\`, or retry this step alone with \`yarn ${commandOf(step)}\`.`,
-      options
+      `Setup failed at step ${at} ${step.name}. ${reason} \`yarn affine setup\`, or retry this step alone with \`yarn ${commandOf(step)}\`.`,
+      thrown
     );
   }
 }

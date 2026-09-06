@@ -3,8 +3,8 @@ import '../prelude';
 import { PrismaClient } from '@prisma/client';
 
 import { applyLocalSeedDefaults } from './environment';
-import { formatStandardSeedReport } from './report';
-import { seedStandardProfile } from './standard';
+import { formatSeedRefusalReport, formatStandardSeedReport } from './report';
+import { SeedRefusedError, seedStandardProfile } from './standard';
 
 const client = new PrismaClient();
 
@@ -36,12 +36,30 @@ if (args[0] === 'standard') {
   // speak before anything is assumed on its behalf.
   applyLocalSeedDefaults();
 
-  const result = await seedStandardProfile(client);
-  await client.$disconnect();
+  let exitCode = 0;
 
-  console.log(formatStandardSeedReport(result));
+  try {
+    const result = await seedStandardProfile(client);
 
-  process.exit(0);
+    console.log(formatStandardSeedReport(result));
+  } catch (error) {
+    // Anything else is a genuine crash, and its stack trace is the useful part.
+    if (!(error instanceof SeedRefusedError)) {
+      throw error;
+    }
+
+    // A refusal is a decision this command made, not a failure it suffered, so
+    // it is reported rather than thrown: the developer needs the settings that
+    // produced the verdict, which a stack trace does not carry. Written to
+    // stderr, and paired with a non-zero exit, so a caller reading credentials
+    // off stdout can never mistake a refusal for a seeded database.
+    console.error(formatSeedRefusalReport(error.signals));
+    exitCode = 1;
+  } finally {
+    await client.$disconnect();
+  }
+
+  process.exit(exitCode);
 }
 
 // Loaded on demand: the mock factories drag in the whole application graph

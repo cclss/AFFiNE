@@ -8,6 +8,7 @@ import { FeatureConfigs, type UserFeatureName } from '../models/common';
 import {
   detectProductionSignals,
   formatProductionRefusal,
+  type ProductionSignal,
 } from './environment';
 
 /**
@@ -71,14 +72,31 @@ export interface StandardSeedResult {
 }
 
 /**
+ * Raised when the guard finds this environment configured as a deployed one.
+ *
+ * Carries the signals behind the verdict so the output layer can render the
+ * refusal itself, rather than a stack trace whose frames name the line that
+ * reported the decision and never the settings that caused it.
+ *
+ * The message is still the full refusal text. A caller that only ever reads
+ * `error.message` — a log line, a generic `catch` — then reports why the run
+ * stopped instead of merely that something went wrong.
+ */
+export class SeedRefusedError extends Error {
+  constructor(readonly signals: readonly ProductionSignal[]) {
+    super(formatProductionRefusal(signals));
+    this.name = 'SeedRefusedError';
+  }
+}
+
+/**
  * Seed the fixed local development accounts.
  *
  * Idempotent: accounts are matched by email, and existing rows are never
  * modified, so running this against a populated database is a no-op.
  *
- * @throws {Error} When the environment carries any deployment setting. The
- * message names each blocking variable and the value it holds; nothing is
- * written to the database before the check.
+ * @throws {SeedRefusedError} When the environment carries any deployment
+ * setting. Nothing is written to the database before the check.
  */
 export async function seedStandardProfile(
   db: PrismaClient
@@ -86,7 +104,7 @@ export async function seedStandardProfile(
   const blocked = detectProductionSignals();
 
   if (blocked.length) {
-    throw new Error(formatProductionRefusal(blocked));
+    throw new SeedRefusedError(blocked);
   }
 
   const accounts: SeededAccount[] = [];
