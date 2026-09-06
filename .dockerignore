@@ -1,26 +1,35 @@
+# The image is built from source, so the source tree must reach the build
+# context. Only host-local artifacts, VCS metadata and secrets are excluded.
+
+# VCS metadata — the build reads files, not history.
 .git
-.github/**/*.md
 .gitignore
 
-# Local dependency/build artifacts
-/node_modules
-/target
+# Dependencies and build output produced on the host. These are re-created
+# inside the image; shipping the host's copies would be slow and, for native
+# modules, wrong for the target platform.
+**/node_modules
+**/dist
+**/lib
+**/target
+.yarn/cache
+.yarn/unplugged
+.yarn/install-state.gz
+.pnp.*
 
-# Yarn v4 artifacts (not needed for image packaging)
-/.yarn/cache
-/.yarn/unplugged
-/.yarn/install-state.gz
-/.pnp.*
+# Test, coverage and browser artifacts.
+**/coverage
+**/test-results
+**/playwright-report
+.coverage
+.nyc_output
+.playwright-browsers
 
-# Test artifacts
-/test-results
-/playwright-report
-/coverage
-/.coverage
+# Local secrets never belong in a build context.
+.env
+**/.env.local
+**/.env.*.local
 
-# OS noise
+# OS noise.
 .DS_Store
-
-# Sourcemaps (keep server sourcemap for backend stacktraces)
-**/*.map
-!packages/backend/server/dist/main.js.map
+Thumbs.db
