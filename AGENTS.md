@@ -27,15 +27,15 @@ This page holds entry points. These six files hold the rules.
 | [preview.toml] | Preview exception configuration |
 
 > **Status — all six are in the repository; `preview.toml` declares nothing.**
-> Every row above resolves to a tracked file — `git ls-files conventions
-> preview.toml` lists all six. Each guide under `conventions/` was written
-> against this repository, with the `file:line` it was read from next to every
-> claim, rather than copied from a canonical original; see [Assumptions]. The
-> preview exception configuration is at the root, but it holds comments only
-> and parses as an empty TOML document: no upstream text or schema for it was
-> found, so no keys were invented. Do not treat the empty file as permission to
-> invent its contents. That it configures nothing yet is recorded as a gap —
-> see [Known Gaps].
+> Every row above resolves to a tracked file — running
+> `git ls-files conventions preview.toml` lists all six. Each guide under
+> `conventions/` was written against this repository, with the `file:line` it
+> was read from next to every claim, rather than copied from a canonical
+> original; see [Assumptions]. The preview exception configuration is at the
+> root, but it holds comments only and parses as an empty TOML document: no
+> upstream text or schema for it was found, so no keys were invented. Do not
+> treat the empty file as permission to invent its contents. That it configures
+> nothing yet is recorded as a gap — see [Known Gaps].
 
 ## Run It Locally
 
@@ -194,12 +194,22 @@ a defect to close, not a rule to follow.
 | Deployment is not a single container | `render.yaml:8-52` | Web, PostgreSQL, and the key-value store are three separate services. Any instruction that assumes one self-contained container is wrong against this repository |
 | The preview exception configuration exists in minimal form only, with its schema unsettled | `preview.toml:1-9` | The file is at the root and tracked, but every line in it is a comment, so it parses as an empty TOML document and declares no preview exception. No upstream text or schema for it was found, so no keys were invented — see [Assumptions]. None of the five guides describes one either. Anything reading this file for a preview exception today gets nothing, and it stays that way until the schema is confirmed |
 | Every server entry point needs a native module `yarn install` does not build | `packages/backend/native/index.js:11`, `packages/backend/server/package.json:19,20`, `.yarnrc.yml:9` | After a clean `yarn install`, anything that loads the server's prelude exits with `Error: Cannot find module './server-native.x64.node'`. That is not only First-Time Setup: `yarn affine dev -p server`, `yarn run seed` in any form, and `yarn workspace @affine/server genconfig` ([conventions/env.md]) all stop there. `@affine/server-native` is a Rust napi module; `enableScripts: false` means no install hook builds it, and no script in this repository builds it either. `yarn workspace @affine/server-native build:debug` was run here: it compiled and then failed at the link step with `collect2: fatal error: ld terminated with signal 7 [Bus error]` on a volume that had reached 100 percent, so the failure is not established as a toolchain defect and no verified build command is printed **(assumption — needs confirming)** |
-| `yarn run init` stops on an interactive prompt | `packages/backend/server/package.json:18`, `packages/backend/server/schema.prisma:10` | Against an empty database at a reachable `DATABASE_URL`, `prisma migrate dev` applies all 119 migrations and then asks `Enter a name for the new migration:`, because `schema.prisma` and the migration history diverge — `prisma migrate diff` between them emits `CREATE EXTENSION IF NOT EXISTS "vector"` plus foreign-key and index changes. `prisma migrate status` still reports the database up to date. With no terminal the command blocks at the prompt and never reaches `yarn data-migration run` |
+| `yarn run init` stops on an interactive prompt | `packages/backend/server/package.json:18`, `packages/backend/server/schema.prisma:5,11` | Against an empty database at a reachable `DATABASE_URL`, `prisma migrate dev` applies all 119 migrations and then asks `Enter a name for the new migration:`, because `schema.prisma` and the migration history diverge — `prisma migrate diff` between them emits `CREATE EXTENSION IF NOT EXISTS "vector"` plus foreign-key and index changes. `prisma migrate status` still reports the database up to date. With no terminal the command blocks at the prompt and never reaches `yarn data-migration run` |
 | First-Time Setup cannot be reached from a checkout | this table's two rows above, `packages/backend/server/package.json:22` | Following the section in order gets nowhere today: `init` blocks at the prompt, `predeploy` exits with `Cannot find module '.../dist/main.js'` because nothing here builds `dist`, and `seed` exits on the missing native module. The section records the commands the repository declares, not a path that completes |
 
 These gaps are scheduled to be closed by later work. When one closes, the
 section above it must be rewritten to describe what the command then does —
 this page describes the repository as it is, not as it is planned to be.
+
+Three of them decide what this page is able to promise: a local run that takes
+one command, a bootstrap that completes without a prompt, and a deployment that
+is one container. They land in [Run It Locally], [First-Time Setup], and
+[Ship It As A Container] respectively. When any of the three changes, that
+section's commands, its gap rows here, and the guide the section delegates to
+have to be re-read against the new behaviour and rewritten together — a command
+corrected in one place and left stale in the other two is how this page starts
+lying. Until then, every command here is the one this repository declares
+today.
 
 ## Assumptions
 
@@ -214,6 +224,14 @@ Unresolved. Recorded so the next reader does not mistake them for settled facts.
   `rspack-dev-server` default rather than on anything this repository sets, so a
   dependency bump can move it without a change here
   **(assumption — needs confirming)**.
+- The container path on this page has been read, not run. `docker build`, and
+  the `docker compose` and `docker image inspect` commands the guides carry,
+  were checked out against `.render/Dockerfile:4-8`, `.render/start.sh:2-12`,
+  and `render.yaml:8-52` only — no Docker daemon was available where this page
+  was verified, so what the built image does at boot is read off those files
+  rather than observed **(assumption — needs confirming)**. Everything under
+  [Run It Locally] and [First-Time Setup], by contrast, was executed, and what
+  it did is what this page and [Known Gaps] record.
 - No upstream source text for the five topic guides or for `preview.toml` was
   found in this repository. The five guides were therefore written against this
   repository — each claim carries the `file:line` it was read from — rather than
@@ -232,5 +250,8 @@ Unresolved. Recorded so the next reader does not mistake them for settled facts.
 [conventions/deploy.md]: ./conventions/deploy.md
 [preview.toml]: ./preview.toml
 [Topic Guides]: #topic-guides
+[Run It Locally]: #run-it-locally
+[First-Time Setup]: #first-time-setup
+[Ship It As A Container]: #ship-it-as-a-container
 [Known Gaps]: #known-gaps
 [Assumptions]: #assumptions

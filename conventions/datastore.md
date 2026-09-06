@@ -26,11 +26,11 @@ covered here.
 
 ## Required Stores
 
-| Store | Required By | Evidence |
-|---|---|---|
-| PostgreSQL | The Prisma datasource. `PrismaModule` sits in the unconditional module list, not behind a flavor check | `packages/backend/server/schema.prisma:8-12`, `packages/backend/server/src/app.module.ts:112` |
-| Key-value store | Four `ioredis` clients constructed at module init. `RedisModule` is likewise unconditional | `packages/backend/server/src/base/redis/instances.ts:54-100`, `packages/backend/server/src/app.module.ts:115` |
-| Local filesystem | Default storage provider for uploaded blobs and avatars is `fs`, bucket `blobs` / `avatars`, rooted at `~/.affine/storage` | `packages/backend/server/src/core/storage/config.ts:28-47` |
+| Store            | Required By                                                                                                                | Evidence                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL       | The Prisma datasource. `PrismaModule` sits in the unconditional module list, not behind a flavor check                     | `packages/backend/server/schema.prisma:8-12`, `packages/backend/server/src/app.module.ts:112`                 |
+| Key-value store  | Four `ioredis` clients constructed at module init. `RedisModule` is likewise unconditional                                 | `packages/backend/server/src/base/redis/instances.ts:54-100`, `packages/backend/server/src/app.module.ts:115` |
+| Local filesystem | Default storage provider for uploaded blobs and avatars is `fs`, bucket `blobs` / `avatars`, rooted at `~/.affine/storage` | `packages/backend/server/src/core/storage/config.ts:28-47`                                                    |
 
 The filesystem store is why every deployment path in the repository mounts
 persistent storage at `~/.affine` — `render.yaml:16-21` attaches a 10 GB disk at
@@ -39,37 +39,42 @@ persistent storage at `~/.affine` — `render.yaml:16-21` attaches a 10 GB disk 
 
 ## PostgreSQL
 
-| Requirement | Value | Evidence |
-|---|---|---|
-| Provider | `postgresql` | `packages/backend/server/schema.prisma:9` |
-| Connection string | Read from the `DATABASE_URL` environment variable by Prisma itself | `packages/backend/server/schema.prisma:10` |
-| Declared extension | `pgvector`, mapped to the extension name `vector`, enabled through the `postgresqlExtensions` preview feature | `packages/backend/server/schema.prisma:5,11` |
-| Major version, deployment | `16` | `render.yaml:51` |
-| Image, self-host | `pgvector/pgvector:pg16` | `.docker/selfhost/compose.yml:50` |
-| Image, local dev | `pgvector/pgvector:pg${DB_VERSION:-16}` — `DB_VERSION=16` in the example env file | `.docker/dev/compose.yml.example:6`, `.docker/dev/.env.example:1-2` |
+| Requirement               | Value                                                                                                         | Evidence                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Provider                  | `postgresql`                                                                                                  | `packages/backend/server/schema.prisma:9`                           |
+| Connection string         | Read from the `DATABASE_URL` environment variable by Prisma itself                                            | `packages/backend/server/schema.prisma:10`                          |
+| Declared extension        | `pgvector`, mapped to the extension name `vector`, enabled through the `postgresqlExtensions` preview feature | `packages/backend/server/schema.prisma:5,11`                        |
+| Major version, deployment | `16`                                                                                                          | `render.yaml:51`                                                    |
+| Image, self-host          | `pgvector/pgvector:pg16`                                                                                      | `.docker/selfhost/compose.yml:50`                                   |
+| Image, local dev          | `pgvector/pgvector:pg${DB_VERSION:-16}` — `DB_VERSION=16` in the example env file                             | `.docker/dev/compose.yml.example:6`, `.docker/dev/.env.example:1-2` |
 
 Two extensions are created by migrations rather than assumed present, and
 **neither aborts the migration when it cannot be created**:
 
-| Extension | Migration | Behaviour When Missing |
-|---|---|---|
-| `vector` | `packages/backend/server/migrations/20250210090228_ai_context_embedding/migration.sql:3-30` | `RAISE WARNING` with instructions to switch to a `pgvector/pgvector` image; the migration continues |
-| `pgcrypto` | `packages/backend/server/migrations/20260109090137_tokens_and_otp/migration.sql:4-13` | `RAISE WARNING`; access tokens are left unhashed and are "lazily migrated on use" |
+| Extension  | Migration                                                                                   | Behaviour When Missing                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `vector`   | `packages/backend/server/migrations/20250210090228_ai_context_embedding/migration.sql:3-30` | `RAISE WARNING` with instructions to switch to a `pgvector/pgvector` image; the migration continues |
+| `pgcrypto` | `packages/backend/server/migrations/20260109090137_tokens_and_otp/migration.sql:4-13`       | `RAISE WARNING`; access tokens are left unhashed and are "lazily migrated on use"                   |
 
 A plain `postgres:16` image therefore passes migration with warnings, not with an
-error. That is the reason all three provisioning paths name a `pgvector` image.
+error. That is the reason both provisioning paths that name an image name a
+`pgvector` one (`.docker/selfhost/compose.yml:50`,
+`.docker/dev/compose.yml.example:6`). The third names none: Render's database is
+a managed service declared by major version alone
+(`render.yaml:48-52`), so which image backs it is the platform's choice and
+neither extension is guaranteed there.
 
 ## Key-Value Store
 
 Four clients are constructed from the same host/port/credentials, each on its own
 database index derived from `redis.db`.
 
-| Client | Database Index | Evidence |
-|---|---|---|
-| `CacheRedis` | `redis.db` | `packages/backend/server/src/base/redis/instances.ts:54-59` |
-| `SessionRedis` | `redis.db + 2` | `packages/backend/server/src/base/redis/instances.ts:61-72` |
-| `SocketIoRedis` | `redis.db + 3` | `packages/backend/server/src/base/redis/instances.ts:74-85` |
-| `QueueRedis` | `redis.db + 4`, with `maxRetriesPerRequest: null` — "required explicitly set to `null` by bullmq" | `packages/backend/server/src/base/redis/instances.ts:87-100` |
+| Client          | Database Index                                                                                    | Evidence                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `CacheRedis`    | `redis.db`                                                                                        | `packages/backend/server/src/base/redis/instances.ts:54-59`  |
+| `SessionRedis`  | `redis.db + 2`                                                                                    | `packages/backend/server/src/base/redis/instances.ts:61-72`  |
+| `SocketIoRedis` | `redis.db + 3`                                                                                    | `packages/backend/server/src/base/redis/instances.ts:74-85`  |
+| `QueueRedis`    | `redis.db + 4`, with `maxRetriesPerRequest: null` — "required explicitly set to `null` by bullmq" | `packages/backend/server/src/base/redis/instances.ts:87-100` |
 
 `redis.db` defaults to `0` and is validated as a non-negative integer with a
 maximum of `10`, described as "Must be less than 10"
@@ -83,19 +88,22 @@ setting but not its reason, see [Assumptions].
 
 ## Provisioning
 
-| Path | PostgreSQL | Key-Value Store | Evidence |
-|---|---|---|---|
-| Local dev | `pgvector/pgvector:pg${DB_VERSION:-16}`, credentials from `DB_USERNAME` / `DB_PASSWORD` / `DB_DATABASE_NAME`, data in the `postgres_data` volume | `redis:latest`, no volume — this store is not persisted in dev | `.docker/dev/compose.yml.example:3-19,79-82`, `.docker/dev/.env.example:3-6` |
-| Self-host | `pgvector/pgvector:pg16`, bind mount `./data/postgres`, `POSTGRES_HOST_AUTH_METHOD: trust`, health-checked with `pg_isready` | `redis`, health-checked with `redis-cli --raw incr ping`, no volume | `.docker/selfhost/compose.yml:39-64` |
-| Render | Managed database, `plan: basic-256mb`, `postgresMajorVersion: '16'`, `ipAllowList: []` | Managed `type: keyvalue`, `plan: starter`, `maxmemoryPolicy: noeviction`, `ipAllowList: []` | `render.yaml:42-52` |
+| Path      | PostgreSQL                                                                                                                                       | Key-Value Store                                                                             | Evidence                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Local dev | `pgvector/pgvector:pg${DB_VERSION:-16}`, credentials from `DB_USERNAME` / `DB_PASSWORD` / `DB_DATABASE_NAME`, data in the `postgres_data` volume | `redis:latest`, no volume — this store is not persisted in dev                              | `.docker/dev/compose.yml.example:3-19,79-82`, `.docker/dev/.env.example:3-6` |
+| Self-host | `pgvector/pgvector:pg16`, bind mount `./data/postgres`, `POSTGRES_HOST_AUTH_METHOD: trust`, health-checked with `pg_isready`                     | `redis`, health-checked with `redis-cli --raw incr ping`, no volume                         | `.docker/selfhost/compose.yml:39-64`                                         |
+| Render    | Managed database, `plan: basic-256mb`, `postgresMajorVersion: '16'`, `ipAllowList: []`                                                           | Managed `type: keyvalue`, `plan: starter`, `maxmemoryPolicy: noeviction`, `ipAllowList: []` | `render.yaml:42-52`                                                          |
 
 The self-host path runs migrations in a separate one-shot container that waits on
 both stores being healthy and that the app container in turn waits on
 (`.docker/selfhost/compose.yml:8-14,23-37`). The local dev file has no such
 container — migrations there are the setup commands in [AGENTS.md].
 
-`.docker/dev/compose.yml.example` is an example, not a compose file. Nothing in
-the repository copies it into place — see [Known Gaps].
+`.docker/dev/compose.yml.example` is an example, not a compose file. No script
+copies it into place, but the copy is not left to guesswork either:
+`docs/developing-server.md:19-20` spells out both `cp` commands, and
+`.docker/dev/.gitignore:2-3` ignores the two landing places they write to — see
+[Known Gaps].
 
 ## Commands
 
@@ -107,9 +115,10 @@ the repository copies it into place — see [Known Gaps].
 cp .docker/dev/.env.example .docker/dev/.env
 docker compose -f .docker/dev/compose.yml.example up -d postgres redis
 
-# List installed extensions. Expect `vector` after migrations have run; expect
-# `pgcrypto` only if the image or the server could create it
-# (packages/backend/server/migrations/20250210090228_ai_context_embedding/migration.sql:4).
+# List installed extensions. Expect `vector` after migrations have run
+# (packages/backend/server/migrations/20250210090228_ai_context_embedding/migration.sql:7);
+# expect `pgcrypto` only if the image or the server could create it
+# (packages/backend/server/migrations/20260109090137_tokens_and_otp/migration.sql:6).
 # Credentials are the ones from .docker/dev/.env.example:4-6.
 docker compose -f .docker/dev/compose.yml.example exec postgres \
   psql -U affine -d affine -c '\dx'
@@ -122,13 +131,13 @@ docker compose -f .docker/dev/compose.yml.example exec redis redis-cli INFO keys
 
 ## Known Gaps
 
-| Gap | Evidence | What Happens Today |
-|---|---|---|
-| The dev datastores have no ready-to-run compose file | `.docker/dev/compose.yml.example`, `.docker/dev/.env.example`, `.gitignore:137` | Both files carry an `.example` suffix and no script copies them. `.env` is gitignored, `compose.yml` is not, so the intended landing place for each is not stated either. The commands above pass the example file to `-f` directly rather than guess |
-| Neither extension guard fails the migration | `packages/backend/server/migrations/20250210090228_ai_context_embedding/migration.sql:8-28`, `packages/backend/server/migrations/20260109090137_tokens_and_otp/migration.sql:7-12` | Both wrap `CREATE EXTENSION` in an exception handler that downgrades the failure to `RAISE WARNING`. A migration run against a stock `postgres:16` reports success. The embedding tables are then guarded by a second `IF EXISTS` check on the extension (`migration.sql:31-32`) and are simply never created, so the mismatch surfaces at query time rather than at migration time |
-| The key-value index guard is dead code | `packages/backend/server/src/base/redis/instances.ts:43-51`, `packages/backend/server/src/base/redis/config.ts:26` | `assertValidDBIndex` is defined on the base class and called from nowhere in `src`. Its own message ("must be between 0 and 11") does not match its check (`db > 15`), and the schema that is actually enforced allows `10`, which puts `QueueRedis` on index 14 |
-| The self-host database accepts any client without a password | `.docker/selfhost/compose.yml:58` | `POSTGRES_HOST_AUTH_METHOD: trust` is set, and the app connects with `postgresql://affine@postgres:5432/affine` (`.docker/selfhost/compose.yml:20`) — a URL with no password. Anything that can reach the container is authenticated |
-| There is no search datastore | `.docker/dev/compose.yml.example:35-66,82`, `packages/backend/server/src/plugins/indexer/config.ts:29-36` | The Elasticsearch service in the dev file is commented out while the `elasticsearch_data` volume it would use is still declared. The indexer plugin is disabled by default and its default provider is `embedded`, so no fourth store is required to boot |
+| Gap                                                          | Evidence                                                                                                                                                                           | What Happens Today                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Copying the dev datastore files into place is a manual step  | `.docker/dev/compose.yml.example`, `.docker/dev/.env.example`, `docs/developing-server.md:19-20`, `.docker/dev/.gitignore:2-3`                                                     | Both files carry an `.example` suffix and no script copies them; the two `cp` commands live in a doc page instead. The landing places are stated — `.docker/dev/.gitignore` ignores `.env` on line 2 and `compose.yml` on line 3 — so a fresh checkout has neither file until someone types the copy by hand, and nothing fails loudly when it is skipped. The commands below run the example file through `-f` directly, which needs no copy at all |
+| Neither extension guard fails the migration                  | `packages/backend/server/migrations/20250210090228_ai_context_embedding/migration.sql:8-28`, `packages/backend/server/migrations/20260109090137_tokens_and_otp/migration.sql:7-12` | Both wrap `CREATE EXTENSION` in an exception handler that downgrades the failure to `RAISE WARNING`. A migration run against a stock `postgres:16` reports success. The embedding tables are then guarded by a second `IF EXISTS` check on the extension (`migration.sql:31-32`) and are simply never created, so the mismatch surfaces at query time rather than at migration time                                                                  |
+| The key-value index guard is dead code                       | `packages/backend/server/src/base/redis/instances.ts:43-51`, `packages/backend/server/src/base/redis/config.ts:26`                                                                 | `assertValidDBIndex` is defined on the base class and called from nowhere in `src`. Its own message ("must be between 0 and 11") does not match its check (`db > 15`), and the schema that is actually enforced allows `10`, which puts `QueueRedis` on index 14                                                                                                                                                                                     |
+| The self-host database accepts any client without a password | `.docker/selfhost/compose.yml:58`                                                                                                                                                  | `POSTGRES_HOST_AUTH_METHOD: trust` is set, and the app connects with `postgresql://affine@postgres:5432/affine` (`.docker/selfhost/compose.yml:20`) — a URL with no password. Anything that can reach the container is authenticated                                                                                                                                                                                                                 |
+| There is no search datastore                                 | `.docker/dev/compose.yml.example:35-66,82`, `packages/backend/server/src/plugins/indexer/config.ts:29-36`                                                                          | The Elasticsearch service in the dev file is commented out while the `elasticsearch_data` volume it would use is still declared. The indexer plugin is disabled by default and its default provider is `embedded`, so no fourth store is required to boot                                                                                                                                                                                            |
 
 ## Assumptions
 

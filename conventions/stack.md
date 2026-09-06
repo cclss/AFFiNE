@@ -31,7 +31,7 @@ Eight glob patterns define the member set (`package.json:7-16`).
 | `blocksuite/**/*`          | `package.json:9`  | The vendored BlockSuite tree — 74 of the 122 members                                                  |
 | `packages/*/*`             | `package.json:10` | `packages/backend/*`, `packages/common/*`, `packages/frontend/*`                                      |
 | `packages/frontend/apps/*` | `package.json:11` | The app targets — `web`, `mobile`, `ios`, `android`, `electron`, `electron-renderer`, `mobile-shared` |
-| `tools/*`                  | `package.json:12` | `tools/cli`, `tools/utils`, and nine more                                                             |
+| `tools/*`                  | `package.json:12` | `tools/cli`, `tools/utils`, and six more — the three `tools/@types/*` packages are the row below      |
 | `docs/reference`           | `package.json:13` | `@affine/docs`                                                                                        |
 | `tools/@types/*`           | `package.json:14` | Ambient type packages                                                                                 |
 | `tests/*`                  | `package.json:15` | `tests/affine-local`, `tests/kit`, and six more                                                       |
@@ -140,9 +140,11 @@ names plus 124 alias keys. Print it with the command below instead of copying a
 list that goes stale on the next package added.
 
 `PackageToDistribution` (`tools/utils/src/distribution.ts:3-14`) is a different
-map with overlapping keys — it labels seven packages with a build distribution
-(`admin`, `web`, `desktop`, `mobile`, `ios`, `android`). It is not consulted by
-`-p` resolution.
+map with overlapping keys — it labels seven packages with a build distribution.
+The seven entries carry six distinct distributions, because `@affine/electron`
+and `@affine/electron-renderer` both map to `desktop`
+(`tools/utils/src/distribution.ts:9-10`). It is not consulted by `-p`
+resolution.
 
 ## Commands
 
@@ -182,11 +184,12 @@ yarn affine build -p nosuchpkg
   the numbers move with the package tree. Whether the committed copy is current
   against the working tree at any given moment is
   **(assumption — needs confirming)**.
-- `blocksuite/**/*` matches 74 members and `tools/*` matches 11, counted from
-  the `location` fields in `tools/utils/src/workspace.gen.ts`. Attributing each
-  member to the pattern that claimed it is an inference from the path prefix,
-  not something the repository records
-  **(assumption — needs confirming)**.
+- `blocksuite/**/*` matches 74 members and `tools/*` matches 8, counted from
+  the `location` fields in `tools/utils/src/workspace.gen.ts`. Eleven locations
+  start with `tools/`; three of them are `tools/@types/*`, which
+  `package.json:14` claims as its own pattern. Attributing each member to the
+  pattern that claimed it is an inference from the path prefix, not something
+  the repository records **(assumption — needs confirming)**.
 
 [AGENTS.md]: ../AGENTS.md
 [conventions/datastore.md]: ./datastore.md
