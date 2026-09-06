@@ -1,9 +1,12 @@
-This document explains how to start server (@affine/server) locally with Docker
+# Developing the AFFiNE Server
 
-> **Warning**:
->
+> **Warning**
 > This document is not guaranteed to be up-to-date.
 > If you find any outdated information, please feel free to open an issue or submit a PR.
+>
+> **Note**
+> This guide covers running the server (`@affine/server`) locally with Docker.
+> For building and developing the web app, see [BUILDING.md](./BUILDING.md).
 
 ## Run required dev services in docker compose
 
@@ -37,12 +40,33 @@ yarn affine @affine/server-native build
 
 ## Prepare dev environment
 
-```sh
-# uncomment all env variables here
-cp packages/backend/server/.env.example packages/backend/server/.env
+The server reads its configuration from `packages/backend/server/.env`. Copy the example and uncomment the variables you need — at minimum `DATABASE_URL`, which the next step connects with:
 
-# everytime there are new migrations, init command should runned again
-yarn affine server init
+```sh
+cp packages/backend/server/.env.example packages/backend/server/.env
+```
+
+## Set up the local environment
+
+One command, from the project root, takes the checkout the rest of the way:
+
+```sh
+yarn setup
+```
+
+It runs the following in order, and stops at the first step that fails:
+
+1. Install workspace dependencies (a no-op if you already ran `yarn install`).
+2. Apply pending database migrations.
+3. Run pending data migrations.
+4. Seed the [standard accounts](#sign-in) below.
+
+Every step is safe to repeat. Run `yarn setup` again whenever new migrations land, or against a database that already holds your data — it brings the schema up to date and leaves existing rows, including the seeded accounts, untouched.
+
+To see the steps without running them:
+
+```sh
+yarn affine setup --dry-run
 ```
 
 ## Start server
@@ -52,31 +76,28 @@ yarn affine server init
 yarn affine server dev
 ```
 
-when server started, it will created a default user and a pro user for testing:
+## Sign in
 
-### default user
+`yarn setup` creates two fixed accounts, and prints them again on every run:
 
-Workspace members up to 3
+| Email                | Password       | Role  | Can open the admin panel |
+| -------------------- | -------------- | ----- | ------------------------ |
+| `dev@affine.local`   | `affine-dev`   | user  | no                       |
+| `admin@affine.local` | `affine-admin` | admin | yes                      |
 
-- email: dev@affine.pro
-- name: Dev User
-- password: dev
+> **Warning**
+> These credentials are for local development only. They are published in this repository, so treat any environment that accepts them as public — never seed them into a shared or production database. The seed refuses to run with `NODE_ENV=production`.
 
-### pro user
+### Admin panel
 
-Workspace members up to 10
+The admin app is a separate dev target. Sign in to it with `admin@affine.local`:
 
-- email: pro@affine.pro
-- name: Pro User
-- password: pro
+```sh
+# at project root
+yarn dev -p @affine/admin
+```
 
-### team user
-
-Include a default `Team Workspace` and the members up to 10
-
-- email: team@affine.pro
-- name: Team User
-- password: team
+It serves on the same **<http://localhost:8080>** port as the web app, so stop one before starting the other.
 
 ## Start frontend
 
@@ -85,7 +106,7 @@ Include a default `Team Workspace` and the members up to 10
 yarn dev
 ```
 
-You can login with the user (dev@affine.pro / dev) above to test the server.
+You can sign in with `dev@affine.local` / `affine-dev` to test the server.
 
 ## Done
 
@@ -101,6 +122,8 @@ yarn affine server prisma studio
 ```
 
 ### Seed the db
+
+The standard accounts above cover the common case. To create extra fixtures — additional users, workspaces, team entitlements — use the seed command directly:
 
 ```sh
 yarn affine server seed -h

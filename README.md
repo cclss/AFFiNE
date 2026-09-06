@@ -195,6 +195,14 @@ AFFiNE repo cloned, built, and ready to go).
 
 See [BUILDING.md] for instructions on how to build AFFiNE from source code.
 
+Working on cloud features (accounts, sync, collaboration, AI) needs the local server as well. Once its dev services are up, one command from the project root installs dependencies, applies the database migrations and creates the standard development accounts:
+
+```sh
+yarn setup
+```
+
+It is safe to rerun against a database that already holds data. See [developing-server.md] for the full walkthrough and the accounts it creates.
+
 ## Contributing
 
 We welcome contributions from everyone.
@@ -213,6 +221,7 @@ See [LICENSE] for details.
 [all-contributors-badge]: https://img.shields.io/github/contributors/toeverything/AFFiNE
 [license]: ./LICENSE
 [building.md]: ./docs/BUILDING.md
+[developing-server.md]: ./docs/developing-server.md
 [update page]: https://affine.pro/blog?tag=Release%20Note
 [jobs available]: ./docs/jobs.md
 [latest packages]: https://github.com/toeverything/AFFiNE/pkgs/container/affine-self-hosted
