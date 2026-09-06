@@ -78,6 +78,11 @@ yarn affine dev -p server
 Run the two in separate shells — the frontend dev server expects the backend to
 already be answering on `3010`.
 
+`-p web` starts and serves on `8080`. `-p server` does not start after a clean
+`yarn install` — it crashes on a native module the install does not build, and
+`nodemon` restarts the crash rather than exiting. Nothing ever binds `3010`.
+See [Known Gaps].
+
 `-p` accepts a full package name (`@affine/web`) or an alias (`web`). Aliases
 come from `AliasToPackage` in `tools/utils/src/distribution.ts`, which maps ten
 names by hand and then derives one alias per workspace package from its last
@@ -183,12 +188,14 @@ a defect to close, not a rule to follow.
 | Gap | Evidence | What Happens Today |
 |---|---|---|
 | Root `build` fails with no arguments | `package.json:24`, `tools/cli/src/command.ts:40-44`, `tools/cli/src/build.ts:3` | `yarn build` expands to `yarn affine build`. `BuildCommand` extends `PackageCommand`, whose `--package,-p` option is `required: true`. With no target the command errors out instead of building anything |
-| Root `dev` hangs when not attached to a terminal | `package.json:23`, `tools/cli/src/command.ts:106-133` | `yarn dev` expands to `yarn affine dev`. `DevCommand` extends `PackageSelectorCommand`, which falls back to an interactive `inquirer` list prompt when `-p` is absent. In CI, a container, or an agent session there is nobody to answer, so it blocks |
+| Root `dev` has no non-interactive path | `package.json:23`, `tools/cli/src/command.ts:106-133`, `tools/cli/src/affine.ts:29` | `yarn dev` expands to `yarn affine dev`. `DevCommand` extends `PackageSelectorCommand`, which falls back to an interactive `inquirer` list prompt when `-p` is absent. Neither outcome without a terminal is a build: with stdin held open the prompt never resolves and the process blocks; with stdin at EOF — `< /dev/null`, the usual CI and agent case — the prompt cannot resolve either, and node exits 1 reporting `Detected unsettled top-level await` |
 | No dummy account to document | `packages/backend/server/src/seed/index.ts:29-42,43-85` | `seed` generates entities from arguments with random attributes. There are no fixed credentials in the repository, so this contract cannot print a login to try |
 | The Dockerfile does not build the app | `.render/Dockerfile:4-8` | It starts `FROM ghcr.io/toeverything/affine:stable` and copies in a start script. Nothing is compiled inside it. There is no from-source image build path in the repository yet |
 | Deployment is not a single container | `render.yaml:8-52` | Web, PostgreSQL, and the key-value store are three separate services. Any instruction that assumes one self-contained container is wrong against this repository |
 | The preview exception configuration exists in minimal form only, with its schema unsettled | `preview.toml:1-9` | The file is at the root and tracked, but every line in it is a comment, so it parses as an empty TOML document and declares no preview exception. No upstream text or schema for it was found, so no keys were invented — see [Assumptions]. None of the five guides describes one either. Anything reading this file for a preview exception today gets nothing, and it stays that way until the schema is confirmed |
-| Server scripts need a native module `yarn install` does not build | `packages/backend/native/index.js:11`, `packages/backend/server/package.json:19` | After a clean `yarn install`, `yarn run seed` exits with `Error: Cannot find module './server-native.x64.node'`. `@affine/server-native` is a Rust napi module and its binary is not produced by install, so every First-Time Setup command sits behind a build step this contract cannot yet name — building it was attempted and the local linker failed, so no verified command is printed here **(assumption — needs confirming)** |
+| Every server entry point needs a native module `yarn install` does not build | `packages/backend/native/index.js:11`, `packages/backend/server/package.json:19,20`, `.yarnrc.yml:9` | After a clean `yarn install`, anything that loads the server's prelude exits with `Error: Cannot find module './server-native.x64.node'`. That is not only First-Time Setup: `yarn affine dev -p server`, `yarn run seed` in any form, and `yarn workspace @affine/server genconfig` ([conventions/env.md]) all stop there. `@affine/server-native` is a Rust napi module; `enableScripts: false` means no install hook builds it, and no script in this repository builds it either. `yarn workspace @affine/server-native build:debug` was run here: it compiled and then failed at the link step with `collect2: fatal error: ld terminated with signal 7 [Bus error]` on a volume that had reached 100 percent, so the failure is not established as a toolchain defect and no verified build command is printed **(assumption — needs confirming)** |
+| `yarn run init` stops on an interactive prompt | `packages/backend/server/package.json:18`, `packages/backend/server/schema.prisma:10` | Against an empty database at a reachable `DATABASE_URL`, `prisma migrate dev` applies all 119 migrations and then asks `Enter a name for the new migration:`, because `schema.prisma` and the migration history diverge — `prisma migrate diff` between them emits `CREATE EXTENSION IF NOT EXISTS "vector"` plus foreign-key and index changes. `prisma migrate status` still reports the database up to date. With no terminal the command blocks at the prompt and never reaches `yarn data-migration run` |
+| First-Time Setup cannot be reached from a checkout | this table's two rows above, `packages/backend/server/package.json:22` | Following the section in order gets nowhere today: `init` blocks at the prompt, `predeploy` exits with `Cannot find module '.../dist/main.js'` because nothing here builds `dist`, and `seed` exits on the missing native module. The section records the commands the repository declares, not a path that completes |
 
 These gaps are scheduled to be closed by later work. When one closes, the
 section above it must be rewritten to describe what the command then does —
@@ -201,7 +208,11 @@ Unresolved. Recorded so the next reader does not mistake them for settled facts.
 - The frontend dev server port is not set explicitly in the CLI config; the
   client websocket URL is `ws://0.0.0.0:8080/ws`
   (`tools/cli/src/bundle-shared.ts:43`), which implies `8080`, the
-  `rspack-dev-server` default. The effective port is
+  `rspack-dev-server` default. Running `yarn affine dev -p web` here bound
+  `0.0.0.0:8080` and printed `Local: http://localhost:8080/`, so `8080` is what
+  the command does today. That it stays `8080` rests on the bundled
+  `rspack-dev-server` default rather than on anything this repository sets, so a
+  dependency bump can move it without a change here
   **(assumption — needs confirming)**.
 - No upstream source text for the five topic guides or for `preview.toml` was
   found in this repository. The five guides were therefore written against this
