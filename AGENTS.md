@@ -26,16 +26,22 @@ This page holds entry points. These six files hold the rules.
 | [conventions/deploy.md] | Image build and boot procedure, including what `.render/Dockerfile` does and does not do |
 | [preview.toml] | Preview exception configuration |
 
-> **Status — all six are in the repository; `preview.toml` declares nothing.**
+> **Status — all six are in the repository; `preview.toml` declares the two
+> preview commands.**
 > Every row above resolves to a tracked file — running
 > `git ls-files conventions preview.toml` lists all six. Each guide under
 > `conventions/` was written against this repository, with the `file:line` it
 > was read from next to every claim, rather than copied from a canonical
 > original; see [Assumptions]. The preview exception configuration is at the
-> root, but it holds comments only and parses as an empty TOML document: no
-> upstream text or schema for it was found, so no keys were invented. Do not
-> treat the empty file as permission to invent its contents. That it configures
-> nothing yet is recorded as a gap — see [Known Gaps].
+> root and carries four keys — `model`, `[build] command`, `[serve] command`
+> and `[serve] port_env` (`preview.toml:29-45`) — naming the build and start
+> scripts under `scripts/preview/`, because the root `build` script refuses
+> without a target and auto-detection has nothing to find. Every value was read
+> off this repository — the two commands name scripts in it, and `model` and
+> `port_env` cite the `file:line` they were read from. Nothing beyond those four
+> is declared: the key names themselves come from the preview platform's
+> contract rather than from any file here — see [Assumptions]. Do not read the
+> four as permission to invent a fifth.
 
 ## Run It Locally
 
@@ -192,7 +198,7 @@ a defect to close, not a rule to follow.
 | No dummy account to document | `packages/backend/server/src/seed/index.ts:29-42,43-85` | `seed` generates entities from arguments with random attributes. There are no fixed credentials in the repository, so this contract cannot print a login to try |
 | The Dockerfile does not build the app | `.render/Dockerfile:4-8` | It starts `FROM ghcr.io/toeverything/affine:stable` and copies in a start script. Nothing is compiled inside it. There is no from-source image build path in the repository yet |
 | Deployment is not a single container | `render.yaml:8-52` | Web, PostgreSQL, and the key-value store are three separate services. Any instruction that assumes one self-contained container is wrong against this repository |
-| The preview exception configuration exists in minimal form only, with its schema unsettled | `preview.toml:1-9` | The file is at the root and tracked, but every line in it is a comment, so it parses as an empty TOML document and declares no preview exception. No upstream text or schema for it was found, so no keys were invented — see [Assumptions]. None of the five guides describes one either. Anything reading this file for a preview exception today gets nothing, and it stays that way until the schema is confirmed |
+| The preview configuration's schema is not evidenced in this repository | `preview.toml:1-27`, `preview.toml:29-45` | The file declares the preview model, the build command, the serve command and the port variable, every value read off this repository — the two commands name scripts in it, and the other two carry the `file:line` they were read from. The schema those key *names* satisfy is the preview platform's, and it is not a file here, so nothing in this repository can be cited for them — see [Assumptions]. None of the five guides describes one either. A reader who needs to know which other keys are accepted has nothing here to read, and that stays so until the schema is confirmed |
 | Every server entry point needs a native module `yarn install` does not build | `packages/backend/native/index.js:11`, `packages/backend/server/package.json:19,20`, `.yarnrc.yml:9` | After a clean `yarn install`, anything that loads the server's prelude exits with `Error: Cannot find module './server-native.x64.node'`. That is not only First-Time Setup: `yarn affine dev -p server`, `yarn run seed` in any form, and `yarn workspace @affine/server genconfig` ([conventions/env.md]) all stop there. `@affine/server-native` is a Rust napi module; `enableScripts: false` means no install hook builds it, and no script in this repository builds it either. `yarn workspace @affine/server-native build:debug` was run here: it compiled and then failed at the link step with `collect2: fatal error: ld terminated with signal 7 [Bus error]` on a volume that had reached 100 percent, so the failure is not established as a toolchain defect and no verified build command is printed **(assumption — needs confirming)** |
 | `yarn run init` stops on an interactive prompt | `packages/backend/server/package.json:18`, `packages/backend/server/schema.prisma:5,11` | Against an empty database at a reachable `DATABASE_URL`, `prisma migrate dev` applies all 119 migrations and then asks `Enter a name for the new migration:`, because `schema.prisma` and the migration history diverge — `prisma migrate diff` between them emits `CREATE EXTENSION IF NOT EXISTS "vector"` plus foreign-key and index changes. `prisma migrate status` still reports the database up to date. With no terminal the command blocks at the prompt and never reaches `yarn data-migration run` |
 | First-Time Setup cannot be reached from a checkout | this table's two rows above, `packages/backend/server/package.json:22` | Following the section in order gets nowhere today: `init` blocks at the prompt, `predeploy` exits with `Cannot find module '.../dist/main.js'` because nothing here builds `dist`, and `seed` exits on the missing native module. The section records the commands the repository declares, not a path that completes |
@@ -254,16 +260,23 @@ Unresolved. Recorded so the next reader does not mistake them for settled facts.
   rather than observed **(assumption — needs confirming)**. Everything under
   [Run It Locally] and [First-Time Setup], by contrast, was executed, and what
   it did is what this page and [Known Gaps] record.
-- No upstream source text for the five topic guides or for `preview.toml` was
-  found in this repository. The five guides were therefore written against this
-  repository — each claim carries the `file:line` it was read from — rather than
-  copied from a canonical original. That the result is what the contract naming
-  them intended is **(assumption — needs confirming)**.
-- The schema `preview.toml` must satisfy is unknown. The file therefore carries
-  a header comment stating its role and no keys, and it stays that way until the
-  schema is confirmed **(assumption — needs confirming)**. The same note is at
-  the top of the file itself (`preview.toml:1-9`), so a reader who opens it
-  without this contract still sees why it is empty.
+- No upstream source text for the five topic guides was found in this
+  repository. They were therefore written against this repository — each claim
+  carries the `file:line` it was read from — rather than copied from a canonical
+  original. That the result is what the contract naming them intended is
+  **(assumption — needs confirming)**.
+- The four keys in `preview.toml` are the ones the preview platform's contract
+  names. Their values were read off this repository, but the key names and the
+  values each of them accepts have no source here, so that the file
+  satisfies the schema is **(assumption — needs confirming)**. The same note is
+  at the top of the file itself (`preview.toml:1-27`), so a reader who opens it
+  without this contract still sees which part of it is evidenced and which is
+  not.
+- The two commands `preview.toml` names have not been run end to end. Their
+  branch behaviour is covered by `scripts/preview/build.test.sh` and
+  `scripts/preview/start.test.sh`, which run them against stub toolchains and
+  need neither a network nor a database; that the real toolchain then produces a
+  server which answers its first screen is **(assumption — needs confirming)**.
 
 [conventions/stack.md]: ./conventions/stack.md
 [conventions/datastore.md]: ./conventions/datastore.md

@@ -1,9 +1,45 @@
 # Preview exception configuration. The run and ship contract names this file in
-# its Topic Guides table (AGENTS.md); this is that file. It is deliberately
-# empty of keys — no upstream text or schema for it was found in this
-# repository, so nothing is invented here (assumption — needs confirming).
+# its Topic Guides table (AGENTS.md); this is that file.
+#
+# It carries keys now because this repository is one of the cases auto-detection
+# cannot resolve on its own: the application is a Yarn workspace monorepo whose
+# server is bundled out of `packages/backend/server`, built by a script at
+# `scripts/preview/build.sh` rather than by a `build` script in the root
+# manifest — which, invoked without a target, refuses instead of building
+# (`package.json:24`, `tools/cli/src/command.ts:40-44`). The four keys below say
+# which model applies and which two commands stand in for the missing
+# conventions; nothing else is declared, because nothing else is known to be
+# read.
+#
+# What is evidenced here and what is not: every *value* was read off this
+# repository — the two commands name scripts in it, and the other two carry the
+# `file:line` they came from. The four *key names*, and the values each of them
+# accepts, come from the preview platform's contract and have no source in this
+# repository (assumption — needs confirming).
+#
+# `target` is deliberately absent: both commands are run from the repository
+# root and resolve their own paths from there
+# (`scripts/preview/build.sh:87-88`, `scripts/preview/start.sh:77-78`).
 #
 # Before adding an entry, confirm the schema, then cite the `file:line` the key
 # and its accepted values were read from — the same evidence rule the contract
 # holds itself to. An entry without that citation is a guess, and a guess in a
 # configuration file is worse than an empty one.
+
+# The server serves the frontends it was built with, from one port
+# (`packages/backend/server/src/core/selfhost/static.ts:29`).
+model = "server"
+
+[build]
+# Installs the workspace, builds the native addon, both frontends and the server
+# bundle, then stages the frontends where the server serves them from.
+command = "sh scripts/preview/build.sh"
+
+[serve]
+# Migrates and seeds the database, then execs the server bundle in this process.
+# Plain HTTP — whatever terminates TLS in front of it belongs to the platform.
+command = "sh scripts/preview/start.sh"
+# Translated into `AFFINE_SERVER_PORT`, which is the name this server listens on
+# (`packages/backend/server/scripts/runtime-env.sh:106-123`,
+# `packages/backend/server/src/core/config/config.ts:67-70`).
+port_env = "PORT"
