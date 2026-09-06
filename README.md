@@ -56,6 +56,110 @@ Star us, and you will receive all release notifications from GitHub without any 
 
 [AFFiNE](https://affine.pro) is an open-source, all-in-one workspace and an operating system for all the building blocks that assemble your knowledge base and much more -- wiki, knowledge management, presentation and digital assets. It's a better alternative to Notion and Miro.
 
+## Run it locally
+
+Two commands turn a clean checkout into a running server — one builds it, one
+starts it. They are the steps the container image takes, with the container
+taken away, and both are run from the repository root.
+
+### Before you start
+
+- **Node**, the major version [`.nvmrc`](.nvmrc) pins. Yarn is not needed on the
+  host: the build points the name at the release vendored in `.yarn/releases`.
+- **A PostgreSQL you can reach**, holding an empty database and a role that may
+  create tables in it. The commands below provision no database and refuse
+  rather than guess a connection string.
+- **Network access on the first build** — dependencies come from the npm
+  registry, and the Rust toolchain [`rust-toolchain.toml`](rust-toolchain.toml)
+  pins is installed when the host has neither `rustup` nor `cargo`.
+
+A `pgvector/pgvector:pg16` image is the PostgreSQL these migrations are written
+against. A stock `postgres:16` migrates and runs — the migration that needs the
+extension downgrades its own failure to a warning — but the embedding tables
+behind AI search are then never created. See
+[conventions/datastore.md](./conventions/datastore.md).
+
+### Configuration
+
+Every value below is read from the environment. None of them is read from a file
+in this repository, and no credential belongs in one.
+
+| Variable | What It Names | When It Is Unset |
+|---|---|---|
+| `DATABASE_URL` | The PostgreSQL the migrations and the server both use | The start command stops before it connects to anything — this is the one value with no default |
+| `PORT` | The port the server listens on | The server listens on `3010` |
+| `REDIS_URL` | The cache, as one URL — host, port and credentials | The server looks for a cache at `localhost:6379` |
+| `AFFINE_SERVER_HTTPS` | That this deployment serves TLS itself | The server speaks plain HTTP and redirects nothing to https, which is what a TLS terminator in front of it expects |
+| `LISTEN_ADDR` | The one address to accept connections on | The server accepts connections on every interface |
+
+`PORT` and `REDIS_URL` are a hosting platform's names for two things this server
+names differently, so they are translated on the way in — and the server's own
+`AFFINE_SERVER_PORT` and `REDIS_SERVER_HOST` win whenever both are set. Every
+variable the server reads is listed in [conventions/env.md](./conventions/env.md).
+
+### Build and start
+
+```sh
+# The database this run should use. It is the one value with no default.
+export DATABASE_URL='postgresql://affine@localhost:5432/affine'
+export PORT=3010
+
+# Installs the workspace, builds the native addon, both frontends and the
+# server bundle, then stages the frontends where the server serves them from.
+sh scripts/preview/build.sh
+
+# Applies the migrations, seeds the first account, then becomes the server.
+sh scripts/preview/start.sh
+```
+
+Both scripts print one line per decision and per step, each prefixed `[preview]`.
+The first screen is then at <http://localhost:3010>, served over plain HTTP by
+the same process that answers `/api` and `/graphql` — one port, and no redirect
+to a second one.
+
+### What the first start does to an empty database
+
+`scripts/preview/start.sh` hands the database to
+`packages/backend/server/scripts/self-host-predeploy.js` before the server
+accepts a request. Each of its four steps asks what it finds rather than whether
+this is the first start, so starting again over the same database repeats
+nothing and fails nothing.
+
+| Step | On An Empty Database | On A Database It Has Run Against Before |
+|---|---|---|
+| `private.key` | Generated under `~/.affine/config` | Kept — sessions signed before the restart stay valid |
+| Schema migrations | All applied — `yarn prisma migrate deploy` | Only the ones not yet applied |
+| Data migrations | All applied — `yarn cli run` | Only the ones not yet recorded |
+| The standard seed | Creates one administrator — `yarn cli standard-seed` | Creates nothing, because the database already holds a user |
+
+### The first account
+
+The seed leaves one administrator behind, and it is the account to sign in with:
+
+| Field | Value |
+|---|---|
+| Name | `Admin` |
+| E-mail | `admin@example.com` |
+| Password | `change-me` |
+
+The three values are a constant in
+[`standard-seed.ts`](./packages/backend/server/src/data/commands/standard-seed.ts),
+so they are the same in every checkout of this repository — a published default
+rather than a secret. The address is under `example.com`, which RFC 2606
+reserves for documentation, so it can collide with no real mailbox.
+
+> **Warning**
+> Anyone who can reach the port can sign in as this administrator until the
+> password is changed. Change it at `/admin/accounts` before this server is
+> reachable by anybody but you.
+
+The seed creates nothing as soon as the database holds any user, so pointing
+`DATABASE_URL` at an existing deployment grows no extra account there. For the
+same migrations and the same first account brought up by `docker run` instead of
+these two commands, see
+[running the self-host image](./docs/self-host/running-the-image.md); for the
+dev servers and watch builds a contributor works against, see [BUILDING.md].
+
 ## Features
 
 **A true canvas for blocks in any form. Docs and whiteboard are now fully merged.**
