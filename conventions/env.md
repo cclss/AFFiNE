@@ -8,11 +8,12 @@ repository does not back a claim, it is marked
 
 ## Scope Statement
 
-This guide answers three questions:
+This guide answers four questions:
 
 - Which sources supply a value, and which one wins when two disagree.
 - What each variable is named, which config key it fills, and what it defaults
   to.
+- Which names a hosting platform uses instead, and what they are translated into.
 - How the server private key is produced, stored, and loaded.
 
 It does not answer: what a connection string must point at
@@ -93,6 +94,44 @@ An out-of-list value throws with the accepted set in the message
 server package's `cli` script sets to run one-shot commands
 (`packages/backend/server/package.json:21`).
 
+## Platform Variables
+
+A hosting platform names two of the things above in its own vocabulary. Neither
+name reaches a config descriptor: they are translated into the ones that do,
+before the server process starts, by
+`packages/backend/server/scripts/runtime-env.sh`. Both entry points source that
+one file — the image's entrypoint ahead of its branch on where the data lives
+(`packages/backend/server/scripts/self-host-entrypoint.sh:347`) and the preview
+start command ahead of its own notices (`scripts/preview/start.sh:164`) — so a
+container and a host agree on what these two mean down to the line they print.
+
+| Platform Name | Translated Into                                                              | Evidence                                                    |
+| ------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `PORT`        | `AFFINE_SERVER_PORT`                                                         | `packages/backend/server/scripts/runtime-env.sh:106-123`    |
+| `REDIS_URL`   | `REDIS_SERVER_HOST`, `REDIS_SERVER_PORT`, `REDIS_SERVER_USERNAME`, `REDIS_SERVER_PASSWORD` — all four written together, credentials percent-decoded | `packages/backend/server/scripts/runtime-env.sh:127-230`    |
+
+Three rules govern both, and neither variable has any other effect.
+
+- **The server's own variable wins.** A set `AFFINE_SERVER_PORT` or
+  `REDIS_SERVER_HOST` is left alone and the platform variable is reported as
+  unread rather than dropped in silence
+  (`packages/backend/server/scripts/runtime-env.sh:106-107,127-128`). It is the
+  more specific of the two, and every deployment that predates the translation
+  keeps behaving as it did.
+- **Empty counts as unset.** `docker run -e PORT` with no value is not a request
+  to listen on nothing (`packages/backend/server/scripts/runtime-env.sh:25-26`).
+- **What cannot be translated is refused, not approximated.** A `PORT` that is
+  not a port number, a `rediss://` URL, a URL that is not
+  `redis://host[:port]`, one that names no host, one whose port is out of range,
+  and one carrying a database index after the host all exit non-zero before
+  anything downstream runs
+  (`packages/backend/server/scripts/runtime-env.sh:114,139,142,165,211,217`).
+  No line ever prints `REDIS_URL` itself, because it may carry a password
+  (`:39-42`).
+
+`REDIS_SERVER_DATABASE` is the one cache setting with no platform spelling: set
+it directly to choose an index (`packages/backend/server/src/base/redis/config.ts:22-27`).
+
 ## The Private Key
 
 `AFFINE_PRIVATE_KEY` is the one variable with a generator behind it. Four things
@@ -111,17 +150,20 @@ which is why the script's `sec1` output and the in-process `pkcs8` output are
 both readable.
 
 Because the file lives under `~/.affine/config`, keeping it means keeping that
-directory: `render.yaml:16-21` mounts a disk at `/root/.affine`, and
-`.docker/selfhost/compose.yml:17,28` binds `./config` into both the app and the
-migration container.
+directory: `render.yaml:24-29` mounts a disk at `/root/.affine`, and
+`.docker/selfhost/compose.yml:31-33` binds `./config` into the app container.
+There is no migration container to bind it into any more — the image's
+entrypoint runs the bootstrap itself
+(`.docker/selfhost/compose.yml:8-13`, and see [conventions/deploy.md]).
 
 ## What Deployment Sets
 
 | Where                             | Variables                                                                                                                                                                                             | Evidence                                                               |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `render.yaml`                     | `AFFINE_SERVER_PORT=10000`, `AFFINE_SERVER_HTTPS=true`, `DATABASE_URL` from the managed database's `connectionString`, `REDIS_SERVER_HOST` and `REDIS_SERVER_PORT` from the managed key-value service | `render.yaml:22-40`                                                    |
-| `.render/start.sh`                | `AFFINE_SERVER_HOST`, defaulted to `RENDER_EXTERNAL_HOSTNAME` and then to `localhost`, and only when it is not already set                                                                            | `.render/start.sh:6`                                                   |
-| `.docker/selfhost/compose.yml`    | `REDIS_SERVER_HOST=redis` and `DATABASE_URL=postgresql://affine@postgres:5432/affine`, on both the app and the migration container                                                                    | `.docker/selfhost/compose.yml:18-20,30-32`                             |
+| `render.yaml`                     | `AFFINE_SERVER_HOST` from the platform's `RENDER_EXTERNAL_HOSTNAME`, `AFFINE_SERVER_PORT=10000`, `AFFINE_SERVER_HTTPS=true`, `DATABASE_URL` from the managed database's `connectionString`, `REDIS_SERVER_HOST` and `REDIS_SERVER_PORT` from the managed key-value service | `render.yaml:30-58`                                                    |
+| The image's entrypoint            | `DATABASE_URL` and `REDIS_SERVER_HOST` to loopback addresses, but only when they are empty — that is what selects the PostgreSQL and Redis inside the image                                           | `packages/backend/server/scripts/self-host-entrypoint.sh:356-368`      |
+| `.docker/selfhost/compose.yml`    | `REDIS_SERVER_HOST=redis` and `DATABASE_URL=postgresql://affine@postgres:5432/affine`, which is what makes the entrypoint leave the embedded pair alone                                               | `.docker/selfhost/compose.yml:34-40`                                   |
+| `scripts/preview/start.sh`        | Nothing of its own. It translates the two platform names above, refuses an empty `DATABASE_URL`, and reports `LISTEN_ADDR` and `AFFINE_SERVER_HTTPS` either way rather than setting them              | `scripts/preview/start.sh:115-117,164,174-184`                         |
 | `.docker/dev/compose.yml.example` | `DB_VERSION`, `DB_PASSWORD`, `DB_USERNAME`, `DB_DATABASE_NAME` — consumed by the PostgreSQL container, not by the server                                                                              | `.docker/dev/compose.yml.example:4-12`, `.docker/dev/.env.example:1-6` |
 
 `RENDER_EXTERNAL_HOSTNAME` is supplied by the hosting platform, not by this
@@ -153,7 +195,7 @@ env | grep -E '^(DATABASE_URL|REDIS_SERVER_|AFFINE_SERVER_|AFFINE_PRIVATE_KEY|LI
 | The example env file sets nothing                                    | `packages/backend/server/.env.example:1-13`                                      | The file is thirteen lines; twelve are comments and one is blank, so nothing is set. Copying the file to `.env` — the path `dotenv` reads at `packages/backend/server/src/prelude.ts:21` — produces an empty environment rather than a working local default                                                                                                                                                           |
 | Four names in the example env file are read by nothing               | `packages/backend/server/.env.example:3-5,13`                                    | `COPILOT_FAL_API_KEY`, `COPILOT_OPENAI_API_KEY`, `COPILOT_PERPLEXITY_API_KEY`, and `MAILER_SECURE` match no descriptor. A `grep` for each over `packages/backend/server/src` returns nothing. The mailer's actual TLS switch is `MAILER_IGNORE_TLS` (`packages/backend/server/src/core/mail/config.ts:68-72`)                                                                                                          |
 | `AFFINE_PRIVATE_KEY` in a `.env` file is discarded on purpose        | `packages/backend/server/src/prelude.ts:19,27-31`                                | The loader records whether the variable was set before `dotenv` ran and deletes it afterwards if it was not. Putting the key in `.env` therefore has no effect; the supported file path is `~/.affine/config/private.key`                                                                                                                                                                                              |
-| The command that regenerates the schema does not run from a checkout | `packages/backend/server/package.json:20`, `packages/backend/native/index.js:11` | `yarn workspace @affine/server genconfig` loads the server prelude, which loads `@affine/server-native`. After a clean `yarn install` that binary does not exist, so the command exits with `Error: Cannot find module './server-native.x64.node'` before writing anything. The generated schema in the repository can be read but not reproduced — the missing build step is the contract's own gap row ([AGENTS.md]) |
+| The command that regenerates the schema does not run after a bare install | `packages/backend/server/package.json:20`, `packages/backend/native/index.js:4-11`, `scripts/preview/build.sh:275-277` | `yarn workspace @affine/server genconfig` loads the server prelude, which loads `@affine/server-native`. After a clean `yarn install` that binary does not exist, so the command exits with `Error: Cannot find module './server-native.x64.node'` before writing anything. Building the addon first — `yarn workspace @affine/server-native build`, the build script's second step — is what makes it run; nothing at install time says so, which is the contract's own gap row ([AGENTS.md]) |
 | A missing private key is not an error                                | `packages/backend/server/src/base/helpers/crypto.ts:107`                         | With `crypto.privateKey` empty, `CryptoHelper` generates a key in memory at config init and the server starts normally. Nothing is written to disk, so the next restart generates a different key and anything signed by the previous one stops verifying                                                                                                                                                              |
 
 ## Assumptions
@@ -163,7 +205,7 @@ env | grep -E '^(DATABASE_URL|REDIS_SERVER_|AFFINE_SERVER_|AFFINE_PRIVATE_KEY|LI
   `.env` wins over the one under `~/.affine/config`. That behaviour belongs to
   the library, not to this repository, and no test here pins it
   **(assumption — needs confirming)**.
-- `RENDER_EXTERNAL_HOSTNAME` (`.render/start.sh:6`) is consumed but never
+- `RENDER_EXTERNAL_HOSTNAME` (`render.yaml:31-40`) is consumed but never
   produced by anything in the repository. That the hosting platform injects it,
   and what it contains, is **(assumption — needs confirming)**.
 - The count of twenty-two variable-backed descriptors comes from the `grep` in
