@@ -199,17 +199,39 @@ a defect to close, not a rule to follow.
 
 These gaps are scheduled to be closed by later work. When one closes, the
 section above it must be rewritten to describe what the command then does —
-this page describes the repository as it is, not as it is planned to be.
+this page describes the repository as it is, not as it is planned to be. Which
+sections that rewrite touches, and what sets it off, is in [Realignment].
 
-Three of them decide what this page is able to promise: a local run that takes
-one command, a bootstrap that completes without a prompt, and a deployment that
-is one container. They land in [Run It Locally], [First-Time Setup], and
-[Ship It As A Container] respectively. When any of the three changes, that
-section's commands, its gap rows here, and the guide the section delegates to
-have to be re-read against the new behaviour and rewritten together — a command
-corrected in one place and left stale in the other two is how this page starts
-lying. Until then, every command here is the one this repository declares
-today.
+## Realignment
+
+This is the first edition of this contract. Everything on it was read off the
+repository, and every command under [Run It Locally] and [First-Time Setup] was
+run against it on 2026-09-05 — it is a record of current behaviour, not of
+planned behaviour. Three pieces of work are expected to change that behaviour,
+and each one invalidates part of this page when it lands.
+
+When a trigger below lands, the three things in its row are re-read against the
+new behaviour and rewritten together, in the same change: the section that
+carries the command, the [Known Gaps] rows that explain why the command does
+not work today, and the guide the section delegates to. A command corrected in
+one place and left stale in the other two is how this page starts lying.
+
+| Trigger | Sections And Gap Rows On This Page | Guides To Re-Read |
+|---|---|---|
+| A local run that takes one command | [Run It Locally] — and the gap rows for root `build` with no arguments, root `dev` with no non-interactive path, and the native module `yarn install` does not build | [conventions/stack.md] |
+| A bootstrap that completes without a prompt | [First-Time Setup] — and the gap rows for `yarn run init` stopping on a prompt, First-Time Setup being unreachable from a checkout, and there being no dummy account to document | [conventions/datastore.md], [conventions/env.md] |
+| A deployment that is one container | [Ship It As A Container] — and the gap rows for the Dockerfile not building the app and for deployment not being a single container | [conventions/deploy.md], [conventions/networking.md] |
+
+The native-module row appears once, under the first trigger, because that is
+where the fix belongs; it also blocks [First-Time Setup] today, so closing it
+means re-reading both sections. [Topic Guides] and [Assumptions] are not in the
+table: the first states the document set the contract requires, which none of
+the three triggers changes, and the second is settled item by item as evidence
+arrives rather than on a trigger.
+
+Until a trigger lands, its row's section keeps the commands this repository
+declares today, and its gap rows stay as they are. Nothing on this page is
+written ahead of the behaviour it describes.
 
 ## Assumptions
 
@@ -254,4 +276,5 @@ Unresolved. Recorded so the next reader does not mistake them for settled facts.
 [First-Time Setup]: #first-time-setup
 [Ship It As A Container]: #ship-it-as-a-container
 [Known Gaps]: #known-gaps
+[Realignment]: #realignment
 [Assumptions]: #assumptions
