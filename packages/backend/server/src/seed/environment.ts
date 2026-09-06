@@ -91,6 +91,10 @@ function nameList(signals: readonly ProductionSignal[]): string {
 export function formatProductionRefusal(
   signals: readonly ProductionSignal[]
 ): string {
+  if (!signals.length) {
+    throw new Error('formatProductionRefusal requires at least one signal');
+  }
+
   return [
     'Refusing to run the standard seed profile — this environment is configured as a deployed one:',
     ...signals.map(signal => `  ${describe(signal)}`),
