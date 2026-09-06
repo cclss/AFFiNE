@@ -2,6 +2,7 @@ import '../prelude';
 
 import { PrismaClient } from '@prisma/client';
 
+import { applyLocalSeedDefaults } from './environment';
 import { formatStandardSeedReport } from './report';
 import { seedStandardProfile } from './standard';
 
@@ -29,6 +30,12 @@ $ seed TeamWorkspace id=xxx quantity=10n     Seed with numberic property, use \`
 }
 
 if (args[0] === 'standard') {
+  // Applied here rather than by the package script, which used to hard-set
+  // `NODE_ENV=development` and so overwrote the very setting the seed's guard
+  // reads. Applied after `../prelude`, too, so a `.env` file still gets to
+  // speak before anything is assumed on its behalf.
+  applyLocalSeedDefaults();
+
   const result = await seedStandardProfile(client);
   await client.$disconnect();
 

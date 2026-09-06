@@ -5,6 +5,10 @@ import type { PrismaClient, User } from '@prisma/client';
 // pulls in the whole Nest DI layer (and through it the native addon), which a
 // plain seed script neither has nor needs.
 import { FeatureConfigs, type UserFeatureName } from '../models/common';
+import {
+  detectProductionSignals,
+  formatProductionRefusal,
+} from './environment';
 
 /**
  * The standard seed profile: a fixed set of accounts every local environment
@@ -13,7 +17,8 @@ import { FeatureConfigs, type UserFeatureName } from '../models/common';
  *
  * These credentials are intentionally public and intentionally weak. They are
  * development fixtures, not secrets, and {@link seedStandardProfile} refuses to
- * run when `NODE_ENV=production` so they can never reach a real deployment.
+ * run on any environment configured as a deployed one, so they can never reach
+ * a real deployment.
  */
 export interface StandardSeedAccount {
   email: string;
@@ -71,15 +76,17 @@ export interface StandardSeedResult {
  * Idempotent: accounts are matched by email, and existing rows are never
  * modified, so running this against a populated database is a no-op.
  *
- * @throws {Error} When running with `NODE_ENV=production`.
+ * @throws {Error} When the environment carries any deployment setting. The
+ * message names each blocking variable and the value it holds; nothing is
+ * written to the database before the check.
  */
 export async function seedStandardProfile(
   db: PrismaClient
 ): Promise<StandardSeedResult> {
-  if (env.prod) {
-    throw new Error(
-      'The standard seed profile creates accounts with publicly known passwords and must never run in production.'
-    );
+  const blocked = detectProductionSignals();
+
+  if (blocked.length) {
+    throw new Error(formatProductionRefusal(blocked));
   }
 
   const accounts: SeededAccount[] = [];

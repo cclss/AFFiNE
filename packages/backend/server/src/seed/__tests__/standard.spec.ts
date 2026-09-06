@@ -2,7 +2,10 @@ import { verify } from '@node-rs/argon2';
 import type { PrismaClient } from '@prisma/client';
 import test from 'ava';
 
-import { Env } from '../../env';
+import {
+  applyLocalSeedDefaults,
+  detectProductionSignals,
+} from '../environment';
 import {
   seedStandardProfile,
   STANDARD_SEED_ADMIN,
@@ -159,22 +162,128 @@ test.serial('should not create duplicates when run again', async t => {
   );
 });
 
-test.serial('should refuse to run in production', async t => {
-  const db = createFakeDb();
-  const originalEnv = globalThis.env;
-  const originalNodeEnv = process.env.NODE_ENV;
+/**
+ * Runs `fn` with `overrides` applied to the real environment, then puts the
+ * environment back exactly as it was — including variables that were unset,
+ * which the guard reads as "nobody configured this box".
+ */
+async function withEnv(
+  overrides: Record<string, string | undefined>,
+  fn: () => Promise<void>
+) {
+  const previous = Object.keys(overrides).map(
+    name => [name, process.env[name]] as const
+  );
 
-  process.env.NODE_ENV = 'production';
-  globalThis.env = new Env();
+  const apply = (
+    entries: readonly (readonly [string, string | undefined])[]
+  ) => {
+    for (const [name, value] of entries) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  };
+
+  apply(Object.entries(overrides));
 
   try {
-    await t.throwsAsync(seedStandardProfile(db.client), {
-      message: /must never run in production/,
-    });
+    await fn();
   } finally {
-    globalThis.env = originalEnv;
-    process.env.NODE_ENV = originalNodeEnv;
+    apply(previous);
   }
+}
+
+test.serial('should refuse to seed when NODE_ENV names production', async t => {
+  const db = createFakeDb();
+
+  await withEnv({ NODE_ENV: 'production', AFFINE_ENV: undefined }, async () => {
+    const error = await t.throwsAsync(seedStandardProfile(db.client));
+
+    t.regex(error?.message ?? '', /NODE_ENV=production/);
+    t.regex(error?.message ?? '', /publicly known passwords/);
+  });
 
   t.is(db.users.length, 0);
+  t.is(db.userFeatures.length, 0);
+});
+
+for (const namespace of ['production', 'beta']) {
+  test.serial(
+    `should refuse to seed when AFFINE_ENV names the deployed ${namespace} namespace`,
+    async t => {
+      const db = createFakeDb();
+
+      // A development NODE_ENV must not clear a deployed namespace: the seed
+      // script itself used to set exactly this value on every run.
+      await withEnv(
+        { NODE_ENV: 'development', AFFINE_ENV: namespace },
+        async () => {
+          const error = await t.throwsAsync(seedStandardProfile(db.client));
+
+          t.regex(error?.message ?? '', new RegExp(`AFFINE_ENV=${namespace}`));
+        }
+      );
+
+      t.is(db.users.length, 0);
+      t.is(db.userFeatures.length, 0);
+    }
+  );
+}
+
+test.serial(
+  'should name every blocking signal, not just the first',
+  async t => {
+    const db = createFakeDb();
+
+    await withEnv(
+      { NODE_ENV: 'production', AFFINE_ENV: 'production' },
+      async () => {
+        const error = await t.throwsAsync(seedStandardProfile(db.client));
+
+        t.regex(error?.message ?? '', /NODE_ENV=production/);
+        t.regex(error?.message ?? '', /AFFINE_ENV=production/);
+      }
+    );
+
+    t.is(db.users.length, 0);
+  }
+);
+
+test.serial(
+  'should seed a machine that names no environment at all',
+  async t => {
+    const db = createFakeDb();
+
+    await withEnv({ NODE_ENV: undefined, AFFINE_ENV: undefined }, async () => {
+      const result = await seedStandardProfile(db.client);
+
+      t.is(result.created, 2);
+    });
+
+    t.is(db.users.length, 2);
+  }
+);
+
+test('should default an unset NODE_ENV to development', t => {
+  const environment: NodeJS.ProcessEnv = {};
+
+  applyLocalSeedDefaults(environment);
+
+  t.is(environment.NODE_ENV, 'development');
+  t.deepEqual(detectProductionSignals(environment), []);
+});
+
+test('should not let the local default disarm a stated environment', t => {
+  const environment: NodeJS.ProcessEnv = { NODE_ENV: 'production' };
+
+  applyLocalSeedDefaults(environment);
+
+  t.is(environment.NODE_ENV, 'production');
+  t.deepEqual(
+    detectProductionSignals(environment).map(signal => signal.name),
+    ['NODE_ENV']
+  );
 });
