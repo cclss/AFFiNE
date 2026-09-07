@@ -7,6 +7,10 @@
 # used, so that decision is what is tested here: which binaries it reaches for,
 # which it leaves alone, what it tells the operator, that the initial setup runs
 # exactly once whichever side the data lives on, and what it finally execs.
+#
+# scripts/runtime-env.sh is sourced by the entrypoint and is covered from here
+# rather than from a suite of its own: what it translates only matters as the
+# branch that reads it and as the environment the server is finally handed.
 # Every external command is a stub that records its invocation, so the test
 # needs neither Docker, nor a database, nor root, and touches nothing outside
 # its own temporary directory.
@@ -32,6 +36,7 @@ trap 'rm -rf "$WORK_DIR"' EXIT INT TERM
 
 STUB_DIR="${WORK_DIR}/bin"
 CALL_LOG="${WORK_DIR}/calls.log"
+ENV_LOG="${WORK_DIR}/env.log"
 STDOUT_FILE="${WORK_DIR}/stdout"
 STDERR_FILE="${WORK_DIR}/stderr"
 
@@ -45,7 +50,7 @@ mkdir -p "$STUB_DIR"
 # is a fact in the log rather than an exec failure, and so that a branch taken
 # by mistake is recorded instead of writing to /var/lib on the machine running
 # the suite.
-for stub in node initdb pg_ctl postgres redis-server redis-cli \
+for stub in initdb pg_ctl postgres redis-server redis-cli \
   install chown chmod; do
   cat > "${STUB_DIR}/${stub}" <<STUB
 #!/bin/sh
@@ -58,6 +63,29 @@ exit 0
 STUB
   chmod +x "${STUB_DIR}/${stub}"
 done
+
+# node, like the stubs above, plus the environment it was handed. The variables
+# scripts/runtime-env.sh translates are only worth translating if they survive
+# as far as the process that becomes the server, and argv does not show that.
+#
+# They go to a file of their own rather than to the call log, because one of
+# them is the password of the cache and the call log is printed on any failure.
+cat > "${STUB_DIR}/node" <<'STUB'
+#!/bin/sh
+printf 'node' >> "$STUB_CALL_LOG"
+for stub_arg in "$@"; do
+  printf ' %s' "$stub_arg" >> "$STUB_CALL_LOG"
+done
+printf '\n' >> "$STUB_CALL_LOG"
+
+for stub_name in AFFINE_SERVER_PORT REDIS_SERVER_HOST REDIS_SERVER_PORT \
+  REDIS_SERVER_USERNAME REDIS_SERVER_PASSWORD; do
+  eval "stub_value=\${${stub_name}:-}"
+  printf '%s=%s\n' "$stub_name" "$stub_value" >> "$STUB_ENV_LOG"
+done
+exit 0
+STUB
+chmod +x "${STUB_DIR}/node"
 
 # `runuser -u <account> -- <command> [args...]`. Privileges cannot be dropped
 # here, so the account is recorded and the command is then run as-is. Running it
@@ -136,6 +164,7 @@ chmod +x "${STUB_DIR}/id"
 # fail depending on which /bin/sh ran the suite.
 clear_case_environment() {
   unset DATABASE_URL REDIS_SERVER_HOST STUB_UID STUB_PG_EXISTING
+  unset PORT AFFINE_SERVER_PORT REDIS_URL
 }
 
 # run <case name> [args...] — env for the entrypoint comes from the caller.
@@ -144,11 +173,13 @@ run() {
   shift
 
   : > "$CALL_LOG"
+  : > "$ENV_LOG"
 
   set +e
   env \
     PATH="${STUB_DIR}:${PATH}" \
     STUB_CALL_LOG="$CALL_LOG" \
+    STUB_ENV_LOG="$ENV_LOG" \
     sh "$ENTRYPOINT" "$@" > "$STDOUT_FILE" 2> "$STDERR_FILE"
   run_status=$?
   set -e
@@ -173,11 +204,13 @@ run_in_fake_root() {
   shift 2
 
   : > "$CALL_LOG"
+  : > "$ENV_LOG"
 
   set +e
   env \
     PATH="${STUB_DIR}:${PATH}" \
     STUB_CALL_LOG="$CALL_LOG" \
+    STUB_ENV_LOG="$ENV_LOG" \
     unshare --map-root-user --mount sh -c \
       'mount --bind "$1" /var/lib || exit 70; shift; exec sh "$@"' \
       fake-root "$fake_root_tree" "$ENTRYPOINT" "$@" \
@@ -226,6 +259,19 @@ expect_call_count() {
   fi
 }
 
+# The environment the server was started with. Never dumped on failure: one of
+# the recorded variables is a password.
+expect_server_environment() {
+  if [ ! -s "$ENV_LOG" ]; then
+    report_failure "expected the server to be started with $1, but it was never started"
+    return
+  fi
+
+  if ! grep -qxF -- "$1" "$ENV_LOG"; then
+    report_failure "expected the server to be started with: $1"
+  fi
+}
+
 expect_stdout_line() {
   if ! grep -qxF -- "$1" "$STDOUT_FILE"; then
     report_failure "expected stdout line: $1"
@@ -244,6 +290,12 @@ expect_stderr_contains() {
   fi
 }
 
+expect_stderr_lacks() {
+  if grep -qF -- "$1" "$STDERR_FILE"; then
+    report_failure "expected stderr not to contain: $1"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # The notices, verbatim. Duplicated from the entrypoint on purpose: the wording
 # is a recorded design decision (the cli-target-notice component), so a silent
@@ -254,7 +306,20 @@ NOTICE_DB_OUTSIDE='[entrypoint] `DATABASE_URL` is set — using the database out
 NOTICE_CACHE_INSIDE='[entrypoint] `REDIS_SERVER_HOST` is empty — starting the cache inside this image; set it to a host name to use one outside.'
 NOTICE_CACHE_OUTSIDE='[entrypoint] `REDIS_SERVER_HOST` is set — using the cache outside this image; unset it to start the one inside.'
 
+NOTICE_PORT_APPLIED='[entrypoint] `PORT` is set — the server will listen on port 10000; set `AFFINE_SERVER_PORT` to choose the port yourself.'
+NOTICE_PORT_UNREAD='[entrypoint] `AFFINE_SERVER_PORT` is set — the server listens on the port it names, and `PORT` is left unread; unset it to follow `PORT`.'
+NOTICE_PORT_ABSENT='[entrypoint] `PORT` is empty — the server listens on the port it is configured with; set it to the port this host expects.'
+NOTICE_CACHE_URL_APPLIED='[entrypoint] `REDIS_URL` is set — using the cache at cache.example:6380; unset it to start the cache inside this image.'
+NOTICE_CACHE_URL_UNREAD='[entrypoint] `REDIS_SERVER_HOST` is set — the cache is the one it names, and `REDIS_URL` is left unread; unset it to follow `REDIS_URL`.'
+NOTICE_CACHE_URL_ABSENT='[entrypoint] `REDIS_URL` is empty — the cache is chosen by `REDIS_SERVER_HOST`; set it to name host, port and credentials in one variable.'
+
 EXTERNAL_DATABASE_URL='postgresql://affine@db.example:5432/affine'
+
+# The cache a platform hands over: credentials in the URL, and the two
+# characters a password cannot carry literally there — `@` and `/` — arriving
+# percent-encoded, which is how a generated password usually arrives.
+EXTERNAL_REDIS_URL='redis://default:p%40ss%2Fword@cache.example:6380'
+EXTERNAL_REDIS_PASSWORD='p@ss/word'
 
 # ---------------------------------------------------------------------------
 # Two /var/lib trees for the embedded database cases: one empty, one carrying
@@ -346,6 +411,132 @@ DATABASE_URL="$EXTERNAL_DATABASE_URL" REDIS_SERVER_HOST='cache.example' \
 expect_status 0
 expect_call_count 'self-host-predeploy.js' 2
 expect_not_called 'node ./dist/main.js'
+
+# ---------------------------------------------------------------------------
+# `PORT` and `REDIS_URL` — the two names a platform speaks — translated into the
+# names the server speaks, and carried as far as the server itself.
+#
+# The database is pointed outside throughout, so that the branch under test is
+# the cache one. That the cache branch says "outside" here is the point of the
+# translation: the URL filled REDIS_SERVER_HOST before the branch read it, and
+# no second decision about the cache was made anywhere.
+# ---------------------------------------------------------------------------
+DATABASE_URL="$EXTERNAL_DATABASE_URL" PORT='10000' \
+  REDIS_URL="$EXTERNAL_REDIS_URL" \
+  run 'platform port and cache'
+expect_status 0
+expect_stdout_line "$NOTICE_PORT_APPLIED"
+expect_stdout_line "$NOTICE_CACHE_URL_APPLIED"
+expect_stdout_line "$NOTICE_CACHE_OUTSIDE"
+expect_not_called 'redis-server'
+expect_server_environment 'AFFINE_SERVER_PORT=10000'
+expect_server_environment 'REDIS_SERVER_HOST=cache.example'
+expect_server_environment 'REDIS_SERVER_PORT=6380'
+expect_server_environment 'REDIS_SERVER_USERNAME=default'
+# Percent-decoded. Handed over as it arrived, the cache would refuse a password
+# it never had — a failure that reads as "wrong password", not as "wrong
+# translation", and costs an operator an afternoon.
+expect_server_environment "REDIS_SERVER_PASSWORD=${EXTERNAL_REDIS_PASSWORD}"
+# The URL carries a password, so no line of the startup may repeat it.
+expect_stdout_lacks "$EXTERNAL_REDIS_PASSWORD"
+expect_stdout_lacks 'p%40ss'
+expect_stdout_lacks 'redis://'
+
+# ---------------------------------------------------------------------------
+# The same URL with everything optional left out: the port is the one a
+# `redis://` URL means when it names none, and the credentials are empty rather
+# than inherited from whatever else was in the environment.
+# ---------------------------------------------------------------------------
+DATABASE_URL="$EXTERNAL_DATABASE_URL" REDIS_URL='redis://cache.example' \
+  run 'cache url without port or credentials'
+expect_status 0
+expect_stdout_line "$NOTICE_CACHE_OUTSIDE"
+expect_not_called 'redis-server'
+expect_server_environment 'REDIS_SERVER_HOST=cache.example'
+expect_server_environment 'REDIS_SERVER_PORT=6379'
+expect_server_environment 'REDIS_SERVER_USERNAME='
+expect_server_environment 'REDIS_SERVER_PASSWORD='
+
+# ---------------------------------------------------------------------------
+# Neither platform variable set: nothing is translated, nothing is invented,
+# and the deployments that predate the translation see the environment they
+# have always seen. The two lines are still printed — a reader of the log can
+# tell "the platform said nothing" from "this was never asked".
+# ---------------------------------------------------------------------------
+DATABASE_URL="$EXTERNAL_DATABASE_URL" REDIS_SERVER_HOST='cache.example' \
+  run 'no platform variables'
+expect_status 0
+expect_stdout_line "$NOTICE_PORT_ABSENT"
+expect_stdout_line "$NOTICE_CACHE_URL_ABSENT"
+expect_stdout_line "$NOTICE_CACHE_OUTSIDE"
+expect_server_environment 'AFFINE_SERVER_PORT='
+expect_server_environment 'REDIS_SERVER_HOST=cache.example'
+expect_server_environment 'REDIS_SERVER_PORT='
+
+# ---------------------------------------------------------------------------
+# Both names for the same thing: the server's own variable is the more specific
+# of the two and keeps the decision, and the platform's is reported as unread
+# instead of being dropped in silence.
+# ---------------------------------------------------------------------------
+DATABASE_URL="$EXTERNAL_DATABASE_URL" PORT='10000' AFFINE_SERVER_PORT='3010' \
+  REDIS_URL="$EXTERNAL_REDIS_URL" REDIS_SERVER_HOST='other.example' \
+  run 'server variables win'
+expect_status 0
+expect_stdout_line "$NOTICE_PORT_UNREAD"
+expect_stdout_line "$NOTICE_CACHE_URL_UNREAD"
+expect_server_environment 'AFFINE_SERVER_PORT=3010'
+expect_server_environment 'REDIS_SERVER_HOST=other.example'
+expect_server_environment 'REDIS_SERVER_PORT='
+expect_server_environment "REDIS_SERVER_PASSWORD="
+
+# ---------------------------------------------------------------------------
+# A `PORT` that is not a port. Fail secure: a server listening on a port nobody
+# routes to is indistinguishable from one that never started, so nothing
+# downstream of the translation runs.
+# ---------------------------------------------------------------------------
+DATABASE_URL="$EXTERNAL_DATABASE_URL" REDIS_SERVER_HOST='cache.example' \
+  PORT='8o80' run 'port is not a number'
+expect_status 1
+expect_stderr_contains "\`PORT\` is set to '8o80', which is not a port number between 1 and 65535."
+expect_not_called 'self-host-predeploy.js'
+expect_not_called 'node ./dist/main.js'
+
+# ---------------------------------------------------------------------------
+# A cache that demands TLS. The client's TLS options are not reachable through
+# the environment, so the alternative to refusing is sending the password in
+# the URL across the network in the clear.
+# ---------------------------------------------------------------------------
+DATABASE_URL="$EXTERNAL_DATABASE_URL" \
+  REDIS_URL='rediss://default:s3cret@cache.example:6380' \
+  run 'cache url demands tls'
+expect_status 1
+expect_stderr_contains 'refused rather than connected to in the clear'
+# The refusal names the scheme, never the URL that carries the password.
+expect_stderr_lacks 's3cret'
+expect_stdout_lacks 's3cret'
+expect_not_called 'self-host-predeploy.js'
+expect_not_called 'node ./dist/main.js'
+
+# ---------------------------------------------------------------------------
+# A database index this file does not translate. Ignoring it would connect to
+# database 0 while the URL says 1 — the same cache, a different set of keys,
+# and nothing in the log to say so.
+# ---------------------------------------------------------------------------
+DATABASE_URL="$EXTERNAL_DATABASE_URL" REDIS_URL='redis://cache.example:6380/1' \
+  run 'cache url names a database index'
+expect_status 1
+expect_stderr_contains "carries '/1' after the host"
+expect_stderr_contains 'REDIS_SERVER_DATABASE'
+expect_not_called 'self-host-predeploy.js'
+
+# ---------------------------------------------------------------------------
+# Something that is not a URL at all.
+# ---------------------------------------------------------------------------
+DATABASE_URL="$EXTERNAL_DATABASE_URL" REDIS_URL='cache.example:6380' \
+  run 'cache url is not a url'
+expect_status 1
+expect_stderr_contains 'is not a `redis://host[:port]` URL'
+expect_not_called 'self-host-predeploy.js'
 
 # ---------------------------------------------------------------------------
 # The database inside the image, on a first boot and on a second one.

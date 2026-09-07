@@ -335,6 +335,18 @@ wait_for_redis() {
 }
 
 # ---------------------------------------------------------------------------
+# Platform variables.
+#
+# A host that starts this image may only speak `PORT` and `REDIS_URL`, which
+# are not names this server knows. scripts/runtime-env.sh translates them into
+# the ones it does, and is sourced here — ahead of the branch below — so that a
+# `REDIS_URL` arrives at that branch as a filled REDIS_SERVER_HOST and is
+# chosen by the same line that chooses every other cache outside this image.
+# The decision stays in one place; the vocabulary is the only thing that grew.
+# ---------------------------------------------------------------------------
+. "${APP_DIR}/scripts/runtime-env.sh"
+
+# ---------------------------------------------------------------------------
 # The branch.
 # ---------------------------------------------------------------------------
 

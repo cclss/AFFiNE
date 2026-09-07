@@ -33,8 +33,8 @@ covered here.
 | Local filesystem | Default storage provider for uploaded blobs and avatars is `fs`, bucket `blobs` / `avatars`, rooted at `~/.affine/storage` | `packages/backend/server/src/core/storage/config.ts:28-47`                                                    |
 
 The filesystem store is why every deployment path in the repository mounts
-persistent storage at `~/.affine` — `render.yaml:16-21` attaches a 10 GB disk at
-`/root/.affine`, and `.docker/selfhost/compose.yml:15-17` binds
+persistent storage at `~/.affine` — `render.yaml:24-29` attaches a 10 GB disk at
+`/root/.affine`, and `.docker/selfhost/compose.yml:31-33` binds
 `./data/storage` and `./config` into the same tree.
 
 ## PostgreSQL
@@ -44,8 +44,9 @@ persistent storage at `~/.affine` — `render.yaml:16-21` attaches a 10 GB disk 
 | Provider                  | `postgresql`                                                                                                  | `packages/backend/server/schema.prisma:9`                           |
 | Connection string         | Read from the `DATABASE_URL` environment variable by Prisma itself                                            | `packages/backend/server/schema.prisma:10`                          |
 | Declared extension        | `pgvector`, mapped to the extension name `vector`, enabled through the `postgresqlExtensions` preview feature | `packages/backend/server/schema.prisma:5,11`                        |
-| Major version, deployment | `16`                                                                                                          | `render.yaml:51`                                                    |
-| Image, self-host          | `pgvector/pgvector:pg16`                                                                                      | `.docker/selfhost/compose.yml:50`                                   |
+| Major version, deployment | `16`                                                                                                          | `render.yaml:69`                                                    |
+| Image, self-host          | `pgvector/pgvector:pg16`                                                                                      | `.docker/selfhost/compose.yml:54`                                   |
+| Image, single container   | PostgreSQL installed into the image from the PGDG archive, started by the entrypoint when `DATABASE_URL` is empty | `.github/deployment/node/Dockerfile:407-494`, `packages/backend/server/scripts/self-host-entrypoint.sh:356-360` |
 | Image, local dev          | `pgvector/pgvector:pg${DB_VERSION:-16}` — `DB_VERSION=16` in the example env file                             | `.docker/dev/compose.yml.example:6`, `.docker/dev/.env.example:1-2` |
 
 Two extensions are created by migrations rather than assumed present, and
@@ -58,11 +59,12 @@ Two extensions are created by migrations rather than assumed present, and
 
 A plain `postgres:16` image therefore passes migration with warnings, not with an
 error. That is the reason both provisioning paths that name an image name a
-`pgvector` one (`.docker/selfhost/compose.yml:50`,
-`.docker/dev/compose.yml.example:6`). The third names none: Render's database is
-a managed service declared by major version alone
-(`render.yaml:48-52`), so which image backs it is the platform's choice and
-neither extension is guaranteed there.
+`pgvector` one (`.docker/selfhost/compose.yml:54`,
+`.docker/dev/compose.yml.example:6`). The other two name none: Render's database
+is a managed service declared by major version alone (`render.yaml:66-70`), and
+the PostgreSQL inside the image is the PGDG distribution rather than a pgvector
+build (`.github/deployment/node/Dockerfile:407-494`) — so on neither is the
+`vector` extension guaranteed.
 
 ## Key-Value Store
 
@@ -83,7 +85,7 @@ claimed by any of the four clients.
 
 The store holds more than a cache: sessions, the socket.io adapter, and the
 bullmq queue all live in it. The deployment configuration sets
-`maxmemoryPolicy: noeviction` (`render.yaml:45`) — the repository states the
+`maxmemoryPolicy: noeviction` (`render.yaml:63`) — the repository states the
 setting but not its reason, see [Assumptions].
 
 ## Provisioning
@@ -91,13 +93,17 @@ setting but not its reason, see [Assumptions].
 | Path      | PostgreSQL                                                                                                                                       | Key-Value Store                                                                             | Evidence                                                                     |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Local dev | `pgvector/pgvector:pg${DB_VERSION:-16}`, credentials from `DB_USERNAME` / `DB_PASSWORD` / `DB_DATABASE_NAME`, data in the `postgres_data` volume | `redis:latest`, no volume — this store is not persisted in dev                              | `.docker/dev/compose.yml.example:3-19,79-82`, `.docker/dev/.env.example:3-6` |
-| Self-host | `pgvector/pgvector:pg16`, bind mount `./data/postgres`, `POSTGRES_HOST_AUTH_METHOD: trust`, health-checked with `pg_isready`                     | `redis`, health-checked with `redis-cli --raw incr ping`, no volume                         | `.docker/selfhost/compose.yml:39-64`                                         |
-| Render    | Managed database, `plan: basic-256mb`, `postgresMajorVersion: '16'`, `ipAllowList: []`                                                           | Managed `type: keyvalue`, `plan: starter`, `maxmemoryPolicy: noeviction`, `ipAllowList: []` | `render.yaml:42-52`                                                          |
+| Self-host | `pgvector/pgvector:pg16`, bind mount `./data/postgres`, `POSTGRES_HOST_AUTH_METHOD: trust`, health-checked with `pg_isready`                     | `redis`, health-checked with `redis-cli --raw incr ping`, no volume                         | `.docker/selfhost/compose.yml:43-68`                                         |
+| Render    | Managed database, `plan: basic-256mb`, `postgresMajorVersion: '16'`, `ipAllowList: []`                                                           | Managed `type: keyvalue`, `plan: starter`, `maxmemoryPolicy: noeviction`, `ipAllowList: []` | `render.yaml:60-70`                                                          |
+| One container | Started inside the image by the entrypoint when `DATABASE_URL` is empty — `initdb` on first boot, then the `affine` role and database | Started likewise when `REDIS_SERVER_HOST` is empty                                          | `packages/backend/server/scripts/self-host-entrypoint.sh:35-46,356-368`      |
+| Preview host | Not provisioned. `DATABASE_URL` must name one already running, and an empty value is refused                                        | Not provisioned; the server looks for one at `localhost:6379` unless `REDIS_URL` names another | `scripts/preview/start.sh:115-117`, `packages/backend/server/src/base/redis/config.ts:28-38` |
 
-The self-host path runs migrations in a separate one-shot container that waits on
-both stores being healthy and that the app container in turn waits on
-(`.docker/selfhost/compose.yml:8-14,23-37`). The local dev file has no such
-container — migrations there are the setup commands in [AGENTS.md].
+No path runs migrations in a container of its own. The self-host compose file
+used to and no longer does, because the image's entrypoint runs the bootstrap
+itself before it hands over to the server
+(`.docker/selfhost/compose.yml:8-13`,
+`packages/backend/server/scripts/self-host-entrypoint.sh:373`). The local dev
+file provisions stores only — what populates them is in [AGENTS.md].
 
 `.docker/dev/compose.yml.example` is an example, not a compose file. No script
 copies it into place, but the copy is not left to guesswork either:
